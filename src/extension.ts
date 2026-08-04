@@ -63,7 +63,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("leetdock.signOut", () =>
       runWithErrorMessage(async () => {
         await auth.signOut();
-        await vscode.window.showInformationMessage("已退出 LeetCode CN。");
+        await vscode.window.showInformationMessage("已退出 LeetDock。");
       }),
     ),
     vscode.commands.registerCommand("leetdock.openProblem", (input?: unknown) =>
@@ -101,7 +101,7 @@ export function activate(context: vscode.ExtensionContext): void {
           );
         });
         explorer.refresh();
-        await vscode.window.showInformationMessage("LeetCode CN 题目列表已刷新。");
+        await vscode.window.showInformationMessage("LeetDock 题目列表已刷新。");
       }),
     ),
     vscode.commands.registerCommand("leetdock.clearCache", () =>
@@ -124,7 +124,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const problem = commandProblem(input, panels);
         if (problem === undefined) {
           await vscode.window.showInformationMessage(
-            "请先打开一道 LeetCode CN 题目。",
+            "请先打开一道 LeetDock 题目。",
           );
           return;
         }
@@ -137,7 +137,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const problem = commandProblem(input, panels);
         if (problem === undefined) {
           await vscode.window.showInformationMessage(
-            "请先打开一道 LeetCode CN 题目。",
+            "请先打开一道 LeetDock 题目。",
           );
           return;
         }
@@ -156,7 +156,7 @@ export function activate(context: vscode.ExtensionContext): void {
           const user = await auth.handleUri(uri);
           if (user !== undefined) {
             await vscode.window.showInformationMessage(
-              `LeetCode CN 登录成功：${user.username}`,
+              `LeetDock 登录成功：${user.username}`,
             );
           }
         }),
@@ -193,13 +193,13 @@ async function withAuthExpiryHandling<T>(
       if (validation === "valid") {
         throw new LeetCodeError(
           "authorization",
-          "LeetCode rejected the request while the session remained valid.",
+          "LeetDock rejected the request while the session remained valid.",
         );
       }
       if (validation === "unavailable") {
         throw new LeetCodeError(
           "service",
-          "Could not verify whether the LeetCode session expired.",
+          "Could not verify whether the LeetDock session expired.",
         );
       }
     }

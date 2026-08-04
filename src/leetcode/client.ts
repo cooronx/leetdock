@@ -496,25 +496,25 @@ function httpError(response: Response): LeetCodeError {
     });
   }
   if (response.status === 403) {
-    return new LeetCodeError("authorization", "LeetCode rejected the request (403).", {
+    return new LeetCodeError("authorization", "LeetDock rejected the request (403).", {
       statusCode: response.status,
     });
   }
   if (response.status === 429) {
     const canRetrySoon = retryAfterMs === undefined || retryAfterMs <= 5_000;
-    return new LeetCodeError("rate-limit", "LeetCode rate limit reached.", {
+    return new LeetCodeError("rate-limit", "LeetDock rate limit reached.", {
       retryable: canRetrySoon,
       statusCode: response.status,
       retryAfterMs,
     });
   }
   if (response.status >= 500) {
-    return new LeetCodeError("service", `LeetCode service error (${response.status}).`, {
+    return new LeetCodeError("service", `LeetDock service error (${response.status}).`, {
       retryable: true,
       statusCode: response.status,
     });
   }
-  return new LeetCodeError("service", `LeetCode request failed (${response.status}).`, {
+  return new LeetCodeError("service", `LeetDock request failed (${response.status}).`, {
     statusCode: response.status,
   });
 }
@@ -524,7 +524,7 @@ function normalizeRequestError(error: unknown): LeetCodeError {
     return error;
   }
   if (error instanceof Error && error.name === "AbortError") {
-    return new LeetCodeError("timeout", "LeetCode request timed out.", {
+    return new LeetCodeError("timeout", "LeetDock request timed out.", {
       cause: error,
       retryable: true,
     });
@@ -537,7 +537,7 @@ function normalizeRequestError(error: unknown): LeetCodeError {
       retryable: true,
     });
   }
-  return new LeetCodeError("network", "LeetCode request failed.", {
+  return new LeetCodeError("network", "LeetDock request failed.", {
     cause: error,
     retryable: true,
   });

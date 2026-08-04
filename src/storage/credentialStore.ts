@@ -35,10 +35,10 @@ export class CredentialStore {
 export function normalizeLeetCodeCookie(cookie: string): string {
   const normalized = cookie.trim();
   if (normalized.length === 0) {
-    throw new Error("Cannot store an empty LeetCode cookie.");
+    throw new Error("Cannot store an empty LeetDock cookie.");
   }
   if (/\r|\n/.test(normalized)) {
-    throw new Error("LeetCode cookie contains invalid line breaks.");
+    throw new Error("LeetDock cookie contains invalid line breaks.");
   }
   return normalized;
 }

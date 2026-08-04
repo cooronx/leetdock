@@ -69,7 +69,7 @@ export class CodeFileService {
     if (snippet === undefined) {
       if (problem.paidOnly) {
         await vscode.window.showWarningMessage(
-          "该题目需要 LeetCode 会员权限，当前账号未获得代码模板。",
+          "该题目需要 LeetDock 会员权限，当前账号未获得代码模板。",
         );
         return undefined;
       }
@@ -171,7 +171,7 @@ function renderSolution(
 ): string {
   const comment = definition.lineComment;
   const metadata = [
-    "@leetcode-cn",
+    "@leetdock",
     `id: ${safeMetadataValue(problem.frontendId)}`,
     `title: ${safeMetadataValue(displayTitle(problem))}`,
     `slug: ${safeMetadataValue(problem.titleSlug)}`,

@@ -91,7 +91,7 @@ export class LanguageService {
     });
     const selected = await vscode.window.showQuickPick(items, {
       title: current === undefined ? "选择默认编程语言" : "切换编程语言",
-      placeHolder: "选择用于 LeetCode 代码文件的语言",
+      placeHolder: "选择用于 LeetDock 代码文件的语言",
     });
     if (selected === undefined) {
       return undefined;

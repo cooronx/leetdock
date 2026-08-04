@@ -113,7 +113,7 @@ export class AuthService implements vscode.Disposable {
       if (user.isSignedIn === false) {
         await this.clearAuthentication();
         this.update({ status: "signed-out" });
-        await vscode.window.showWarningMessage("LeetCode 登录已过期，请重新登录。");
+        await vscode.window.showWarningMessage("LeetDock 登录已过期，请重新登录。");
         return;
       }
       if (user.username.trim().length === 0) {
@@ -154,7 +154,7 @@ export class AuthService implements vscode.Disposable {
     }
     if (!opened) {
       await this.cache.delete(PENDING_SIGN_IN_KEY);
-      throw new Error("无法打开 LeetCode 登录页面。");
+      throw new Error("无法打开 LeetDock 登录页面。");
     }
   }
 
@@ -201,7 +201,7 @@ export class AuthService implements vscode.Disposable {
     }
     if (user.isSignedIn === false) {
       this.update(previousSnapshot);
-      throw new LeetCodeError("authentication", "LeetCode rejected the callback cookie.");
+      throw new LeetCodeError("authentication", "LeetDock rejected the callback cookie.");
     }
     if (user.username.trim().length === 0) {
       this.update(previousSnapshot);
@@ -214,8 +214,8 @@ export class AuthService implements vscode.Disposable {
     const previousUsername = previousSnapshot.user?.username;
     const confirmationMessage =
       previousUsername !== undefined && previousUsername !== user.username
-        ? `即将把 LeetCode CN 账号从 ${previousUsername} 切换为 ${user.username}。是否确认？`
-        : `即将登录 LeetCode CN 账号：${user.username}。是否确认？`;
+        ? `即将把 LeetDock 账号从 ${previousUsername} 切换为 ${user.username}。是否确认？`
+        : `即将登录 LeetDock 账号：${user.username}。是否确认？`;
     const confirmed = await vscode.window.showWarningMessage(
       confirmationMessage,
       { modal: true },

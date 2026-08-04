@@ -1,7 +1,7 @@
 {
   "name": "leetdock",
   "displayName": "LeetDock",
-  "description": "A focused LeetCode China workflow for Visual Studio Code.",
+  "description": "A focused LeetDock problem-solving workflow for Visual Studio Code.",
   "version": "0.1.0",
   "publisher": "cooronx",
   "private": true,
@@ -13,9 +13,9 @@
     "Other"
   ],
   "keywords": [
-    "leetcode",
-    "leetcode-cn",
-    "algorithm"
+    "leetdock",
+    "algorithm",
+    "coding"
   ],
   "activationEvents": [
     "onStartupFinished",
@@ -30,49 +30,49 @@
       {
         "command": "leetdock.signIn",
         "title": "Sign In",
-        "category": "LeetCode CN"
+        "category": "LeetDock"
       },
       {
         "command": "leetdock.signOut",
         "title": "Sign Out",
-        "category": "LeetCode CN"
+        "category": "LeetDock"
       },
       {
         "command": "leetdock.openProblem",
         "title": "Open Problem",
-        "category": "LeetCode CN"
+        "category": "LeetDock"
       },
       {
         "command": "leetdock.searchProblem",
         "title": "Search Problem",
-        "category": "LeetCode CN",
+        "category": "LeetDock",
         "icon": "$(search)"
       },
       {
         "command": "leetdock.refreshProblem",
         "title": "Refresh Problem",
-        "category": "LeetCode CN"
+        "category": "LeetDock"
       },
       {
         "command": "leetdock.openCode",
         "title": "Open Code",
-        "category": "LeetCode CN"
+        "category": "LeetDock"
       },
       {
         "command": "leetdock.switchLanguage",
         "title": "Switch Language",
-        "category": "LeetCode CN"
+        "category": "LeetDock"
       },
       {
         "command": "leetdock.refreshProblemList",
         "title": "Refresh Problem List",
-        "category": "LeetCode CN",
+        "category": "LeetDock",
         "icon": "$(refresh)"
       },
       {
         "command": "leetdock.clearCache",
         "title": "Clear Cache",
-        "category": "LeetCode CN",
+        "category": "LeetDock",
         "icon": "$(clear-all)"
       }
     ],
@@ -89,7 +89,7 @@
       "leetdock": [
         {
           "id": "leetdock.explorer",
-          "name": "LeetCode CN"
+          "name": "LeetDock"
         }
       ]
     },
@@ -131,7 +131,7 @@
             "Java",
             "TypeScript"
           ],
-          "description": "生成 LeetCode CN 代码文件时使用的默认语言。",
+          "description": "生成 LeetDock 代码文件时使用的默认语言。",
           "scope": "window"
         }
       }

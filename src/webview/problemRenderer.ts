@@ -159,7 +159,7 @@ export function renderProblemHtml(
   <main class="problem-shell">
     <header class="problem-header">
       <div class="problem-heading">
-        <p class="problem-kicker">LeetCode CN · ${escapeHtml(problem.frontendId)}</p>
+        <p class="problem-kicker">LeetDock · ${escapeHtml(problem.frontendId)}</p>
         <h1>${escapeHtml(primaryTitle)}</h1>
         ${secondaryTitle === undefined ? "" : `<p class="original-title" lang="en">${escapeHtml(secondaryTitle)}</p>`}
       </div>
@@ -265,7 +265,7 @@ function renderTags(problem: ProblemDetail): string {
 function renderPremiumNotice(): string {
   return `<aside class="premium-notice" role="note">
     <strong>会员专享题目</strong>
-    <span>查看完整题目或提交代码可能需要 LeetCode 会员权限。</span>
+    <span>查看完整题目或提交代码可能需要 LeetDock 会员权限。</span>
   </aside>`;
 }
 

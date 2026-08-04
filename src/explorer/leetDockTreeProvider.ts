@@ -83,11 +83,11 @@ function accountItem(snapshot: AuthSnapshot): vscode.TreeItem {
   switch (snapshot.status) {
     case "signed-in":
       item.description = snapshot.user?.isPremium === true ? "会员" : "已登录";
-      item.tooltip = `LeetCode CN 用户：${snapshot.user?.username ?? ""}`;
+      item.tooltip = `LeetDock 用户：${snapshot.user?.username ?? ""}`;
       break;
     case "signed-out":
       item.description = "点击登录";
-      item.tooltip = "登录 LeetCode 中国站";
+      item.tooltip = "登录 LeetDock";
       item.command = { command: "leetdock.signIn", title: "登录" };
       break;
     case "offline":
@@ -97,7 +97,7 @@ function accountItem(snapshot: AuthSnapshot): vscode.TreeItem {
       break;
     case "verifying":
       item.description = "正在验证";
-      item.tooltip = "正在验证 LeetCode CN 登录状态";
+      item.tooltip = "正在验证 LeetDock 登录状态";
       break;
   }
   return item;
@@ -107,7 +107,7 @@ function accountLabel(snapshot: AuthSnapshot): string {
   if (snapshot.user?.username) {
     return snapshot.user.username;
   }
-  return snapshot.status === "signed-out" ? "未登录" : "LeetCode CN";
+  return snapshot.status === "signed-out" ? "未登录" : "LeetDock";
 }
 
 function accountIcon(snapshot: AuthSnapshot): string {

@@ -1,6 +1,6 @@
 # LeetDock
 
-LeetDock 是一个只面向 [LeetCode 中国站](https://leetcode.cn) 的 Visual Studio Code 扩展。扩展 ID 为 `cooronx.leetdock`。
+LeetDock 是一个通过 [leetcode.cn](https://leetcode.cn) 获取题目内容的 Visual Studio Code 扩展。扩展 ID 为 `cooronx.leetdock`。
 
 第一阶段支持：
 
@@ -14,9 +14,9 @@ LeetDock 是一个只面向 [LeetCode 中国站](https://leetcode.cn) 的 Visual
 
 ## 使用
 
-1. 在命令面板运行 `LeetCode CN: Sign In`，或点击状态栏/侧栏中的登录入口。
-2. 在浏览器完成 LeetCode CN 授权，返回 VS Code 后核对弹窗中的账号并确认。
-3. 运行 `LeetCode CN: Open Problem`，输入例如 `1`、`两数之和`、`two-sum` 或完整题目 URL。
+1. 在命令面板运行 `LeetDock: Sign In`，或点击状态栏/侧栏中的登录入口。
+2. 在浏览器完成 LeetDock 授权，返回 VS Code 后核对弹窗中的账号并确认。
+3. 运行 `LeetDock: Open Problem`，输入例如 `1`、`两数之和`、`two-sum` 或完整题目 URL。
 4. 在题目页面点击“打开代码”。首次使用时选择默认语言和代码根目录。
 
 如果首次选择代码目录时取消，LeetDock 会使用并记住系统用户目录下的默认位置：
@@ -37,7 +37,7 @@ leetdock/
 
 ## 命令与设置
 
-主要命令都以 `LeetCode CN:` 开头：
+主要命令都以 `LeetDock:` 开头：
 
 - `Sign In` / `Sign Out`
 - `Open Problem` / `Search Problem`

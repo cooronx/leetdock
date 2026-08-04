@@ -13,7 +13,7 @@ export async function openProblemCommand(
   input?: unknown,
 ): Promise<void> {
   const keyword = commandInput(input) ?? await vscode.window.showInputBox({
-    title: "打开 LeetCode CN 题目",
+    title: "LeetDock：打开题目",
     prompt: "输入题号、中文或英文名称、titleSlug 或 leetcode.cn URL",
     placeHolder: "例如：1、两数之和、two-sum",
     ignoreFocusOut: true,
@@ -41,7 +41,7 @@ export async function searchProblemCommand(
   panels: ProblemPanelManager,
 ): Promise<void> {
   const keyword = await vscode.window.showInputBox({
-    title: "搜索 LeetCode CN 题目",
+    title: "LeetDock：搜索题目",
     prompt: "输入中文名、英文名或关键词",
     placeHolder: "例如：哈希表、Two Sum",
     ignoreFocusOut: true,
@@ -64,7 +64,7 @@ export async function refreshProblemCommand(
 ): Promise<void> {
   const active = panels.getActiveProblem();
   if (active === undefined) {
-    await vscode.window.showInformationMessage("请先打开一道 LeetCode CN 题目。");
+    await vscode.window.showInformationMessage("请先打开一道 LeetDock 题目。");
     return;
   }
   await withLookupProgress(() => panels.refresh(active.titleSlug));
@@ -75,7 +75,7 @@ async function pickProblem(
   title: string,
 ): Promise<ProblemSummary | undefined> {
   if (problems.length === 0) {
-    await vscode.window.showInformationMessage("没有找到匹配的 LeetCode CN 题目。");
+    await vscode.window.showInformationMessage("没有找到匹配的 LeetDock 题目。");
     return undefined;
   }
 
@@ -136,7 +136,7 @@ async function withLookupProgress<T>(operation: () => Promise<T>): Promise<T> {
   return vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Window,
-      title: "LeetDock 正在连接 LeetCode CN…",
+      title: "LeetDock 正在连接…",
       cancellable: false,
     },
     operation,
