@@ -36,6 +36,21 @@
         "command": "leetdock.signOut",
         "title": "Sign Out",
         "category": "LeetCode CN"
+      },
+      {
+        "command": "leetdock.openProblem",
+        "title": "Open Problem",
+        "category": "LeetCode CN"
+      },
+      {
+        "command": "leetdock.searchProblem",
+        "title": "Search Problem",
+        "category": "LeetCode CN"
+      },
+      {
+        "command": "leetdock.refreshProblem",
+        "title": "Refresh Problem",
+        "category": "LeetCode CN"
       }
     ]
   },
