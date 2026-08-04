@@ -135,7 +135,9 @@ export class ProblemService {
   }
 
   public async refreshProblemList(): Promise<void> {
+    const index = await this.client.getProblemIndex();
     await this.cache.clearProblemLists();
+    await this.cache.setIndex(index);
   }
 
   public async getRecent(): Promise<readonly RecentProblem[]> {

@@ -6,6 +6,7 @@ import {
   refreshProblemCommand,
   searchProblemCommand,
 } from "./commands/problemCommands";
+import { LeetDockTreeProvider } from "./explorer/leetDockTreeProvider";
 import { LeetCodeClient } from "./leetcode/client";
 import { LeetCodeError, toUserMessage } from "./leetcode/errors";
 import type { ProblemDetail } from "./leetcode/types";
@@ -24,6 +25,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const auth = new AuthService(context, client, credentials, cache);
   const problemCache = new ProblemCache(cache);
   const problems = new ProblemService(client, problemCache);
+  const explorer = new LeetDockTreeProvider(auth, problems);
   const languages = new LanguageService();
   const codeFiles = new CodeFileService(context, languages);
   const panels = new ProblemPanelManager(context.extensionUri, {
@@ -35,8 +37,13 @@ export function activate(context: vscode.ExtensionContext): void {
       panel.reveal(panel.viewColumn, false);
       await vscode.commands.executeCommand("leetdock.switchLanguage", problem, panel);
     },
-    refresh: (problem) =>
-      withAuthExpiryHandling(auth, () => problems.refreshProblem(problem.titleSlug)),
+    refresh: async (problem) => {
+      const detail = await withAuthExpiryHandling(auth, () =>
+        problems.refreshProblem(problem.titleSlug),
+      );
+      explorer.refresh();
+      return detail;
+    },
   });
   const statusBar = new AuthStatusBar(auth);
 
@@ -44,6 +51,8 @@ export function activate(context: vscode.ExtensionContext): void {
     auth,
     statusBar,
     panels,
+    explorer,
+    vscode.window.registerTreeDataProvider("leetdock.explorer", explorer),
     auth.registerUserDataCleanup(() => problemCache.clearUserData()),
     vscode.commands.registerCommand("leetdock.signIn", () =>
       runWithErrorMessage(() => auth.signIn()),
@@ -55,19 +64,57 @@ export function activate(context: vscode.ExtensionContext): void {
       }),
     ),
     vscode.commands.registerCommand("leetdock.openProblem", (input?: unknown) =>
-      runWithErrorMessage(() =>
-        withAuthExpiryHandling(auth, () => openProblemCommand(problems, panels, input)),
-      ),
+      runWithErrorMessage(async () => {
+        await withAuthExpiryHandling(auth, () =>
+          openProblemCommand(problems, panels, input),
+        );
+        explorer.refresh();
+      }),
     ),
     vscode.commands.registerCommand("leetdock.searchProblem", () =>
-      runWithErrorMessage(() =>
-        withAuthExpiryHandling(auth, () => searchProblemCommand(problems, panels)),
-      ),
+      runWithErrorMessage(async () => {
+        await withAuthExpiryHandling(auth, () =>
+          searchProblemCommand(problems, panels),
+        );
+        explorer.refresh();
+      }),
     ),
     vscode.commands.registerCommand("leetdock.refreshProblem", () =>
-      runWithErrorMessage(() =>
-        withAuthExpiryHandling(auth, () => refreshProblemCommand(panels)),
-      ),
+      runWithErrorMessage(async () => {
+        await withAuthExpiryHandling(auth, () => refreshProblemCommand(panels));
+        explorer.refresh();
+      }),
+    ),
+    vscode.commands.registerCommand("leetdock.refreshProblemList", () =>
+      runWithErrorMessage(async () => {
+        await withAuthExpiryHandling(auth, async () => {
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Window,
+              title: "LeetDock 正在刷新题目列表…",
+              cancellable: false,
+            },
+            () => problems.refreshProblemList(),
+          );
+        });
+        explorer.refresh();
+        await vscode.window.showInformationMessage("LeetCode CN 题目列表已刷新。");
+      }),
+    ),
+    vscode.commands.registerCommand("leetdock.clearCache", () =>
+      runWithErrorMessage(async () => {
+        const confirmed = await vscode.window.showWarningMessage(
+          "确定清除 LeetDock 的题目缓存和最近打开记录吗？登录状态、默认语言和代码目录不会改变。",
+          { modal: true },
+          "清除",
+        );
+        if (confirmed !== "清除") {
+          return;
+        }
+        await problems.clearCache();
+        explorer.refresh();
+        await vscode.window.showInformationMessage("LeetDock 缓存已清除。");
+      }),
     ),
     vscode.commands.registerCommand("leetdock.openCode", (input?: unknown) =>
       runWithErrorMessage(async () => {

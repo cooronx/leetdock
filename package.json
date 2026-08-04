@@ -45,7 +45,8 @@
       {
         "command": "leetdock.searchProblem",
         "title": "Search Problem",
-        "category": "LeetCode CN"
+        "category": "LeetCode CN",
+        "icon": "$(search)"
       },
       {
         "command": "leetdock.refreshProblem",
@@ -61,8 +62,56 @@
         "command": "leetdock.switchLanguage",
         "title": "Switch Language",
         "category": "LeetCode CN"
+      },
+      {
+        "command": "leetdock.refreshProblemList",
+        "title": "Refresh Problem List",
+        "category": "LeetCode CN",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "leetdock.clearCache",
+        "title": "Clear Cache",
+        "category": "LeetCode CN",
+        "icon": "$(clear-all)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "leetdock",
+          "title": "LeetDock",
+          "icon": "media/leetdock.svg"
+        }
+      ]
+    },
+    "views": {
+      "leetdock": [
+        {
+          "id": "leetdock.explorer",
+          "name": "LeetCode CN"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "leetdock.searchProblem",
+          "when": "view == leetdock.explorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "leetdock.refreshProblemList",
+          "when": "view == leetdock.explorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "leetdock.clearCache",
+          "when": "view == leetdock.explorer",
+          "group": "navigation@3"
+        }
+      ]
+    },
     "configuration": {
       "title": "LeetDock",
       "properties": {
