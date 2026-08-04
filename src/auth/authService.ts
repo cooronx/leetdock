@@ -23,6 +23,7 @@ export class AuthService implements vscode.Disposable {
   private readonly changeEmitter = new vscode.EventEmitter<AuthSnapshot>();
   private snapshotValue: AuthSnapshot = { status: "verifying" };
   private operationTail: Promise<void> = Promise.resolve();
+  private readonly userDataCleanupHandlers = new Set<() => Promise<void>>();
 
   public constructor(
     private readonly context: vscode.ExtensionContext,
@@ -35,6 +36,11 @@ export class AuthService implements vscode.Disposable {
 
   public get snapshot(): AuthSnapshot {
     return this.snapshotValue;
+  }
+
+  public registerUserDataCleanup(handler: () => Promise<void>): vscode.Disposable {
+    this.userDataCleanupHandlers.add(handler);
+    return new vscode.Disposable(() => this.userDataCleanupHandlers.delete(handler));
   }
 
   public async initialize(): Promise<void> {
@@ -64,7 +70,10 @@ export class AuthService implements vscode.Disposable {
     ]);
 
     if (cookie === undefined) {
-      await this.cache.delete(CURRENT_USER_KEY);
+      await Promise.all([
+        this.cache.delete(CURRENT_USER_KEY),
+        ...[...this.userDataCleanupHandlers].map((handler) => handler()),
+      ]);
       this.update({ status: "signed-out" });
       return;
     }
@@ -131,6 +140,7 @@ export class AuthService implements vscode.Disposable {
     await this.cache.delete(PENDING_SIGN_IN_KEY);
 
     const cookie = normalizeLeetCodeCookie(readRawQueryParameter(uri.query, "cookie"));
+    const previousCookie = await this.credentials.getCookie();
     const previousSnapshot = this.snapshotValue;
     this.update({
       status: "verifying",
@@ -149,8 +159,28 @@ export class AuthService implements vscode.Disposable {
       throw new LeetCodeError("authentication", "LeetCode rejected the callback cookie.");
     }
 
-    await this.credentials.storeCookie(cookie);
-    await this.cache.set(CURRENT_USER_KEY, user);
+    try {
+      if (previousSnapshot.user?.username !== user.username) {
+        await Promise.all(
+          [...this.userDataCleanupHandlers].map((handler) => handler()),
+        );
+      }
+      await this.credentials.storeCookie(cookie);
+      await this.cache.set(CURRENT_USER_KEY, user);
+    } catch (error) {
+      if (previousCookie === undefined) {
+        await this.credentials.deleteCookie();
+      } else {
+        await this.credentials.storeCookie(previousCookie);
+      }
+      if (previousSnapshot.user === undefined) {
+        await this.cache.delete(CURRENT_USER_KEY);
+      } else {
+        await this.cache.set(CURRENT_USER_KEY, previousSnapshot.user);
+      }
+      this.update(previousSnapshot);
+      throw error;
+    }
     this.update({ status: "signed-in", user });
     return user;
   }
@@ -165,6 +195,7 @@ export class AuthService implements vscode.Disposable {
       this.credentials.deleteCookie(),
       this.cache.delete(CURRENT_USER_KEY),
       this.cache.delete(PENDING_SIGN_IN_KEY),
+      ...[...this.userDataCleanupHandlers].map((handler) => handler()),
     ]);
   }
 

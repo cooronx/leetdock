@@ -3,6 +3,7 @@ import { AuthService } from "./auth/authService";
 import { AuthStatusBar } from "./auth/authStatusBar";
 import { LeetCodeClient } from "./leetcode/client";
 import { toUserMessage } from "./leetcode/errors";
+import { ProblemCache } from "./problem/problemCache";
 import { CacheStorage } from "./storage/cacheStorage";
 import { CredentialStore } from "./storage/credentialStore";
 
@@ -11,11 +12,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const cache = new CacheStorage(context.globalState);
   const client = new LeetCodeClient(credentials);
   const auth = new AuthService(context, client, credentials, cache);
+  const problemCache = new ProblemCache(cache);
   const statusBar = new AuthStatusBar(auth);
 
   context.subscriptions.push(
     auth,
     statusBar,
+    auth.registerUserDataCleanup(() => problemCache.clearUserData()),
     vscode.commands.registerCommand("leetdock.signIn", () =>
       runWithErrorMessage(() => auth.signIn()),
     ),
