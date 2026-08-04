@@ -39,10 +39,14 @@ export class CacheStorage {
     }
 
     const storedAt = Date.now();
+    const expiresAt = ttlMs === undefined ? undefined : storedAt + ttlMs;
+    if (expiresAt !== undefined && !Number.isFinite(expiresAt)) {
+      throw new Error("Cache expiry exceeds the supported range.");
+    }
     const entry: CacheEntry<T> = {
       version: CACHE_FORMAT_VERSION,
       storedAt,
-      ...(ttlMs === undefined ? {} : { expiresAt: storedAt + ttlMs }),
+      ...(expiresAt === undefined ? {} : { expiresAt }),
       value,
     };
 
@@ -72,8 +76,8 @@ export class CacheStorage {
       value !== undefined &&
       typeof value === "object" &&
       value.version === CACHE_FORMAT_VERSION &&
-      typeof value.storedAt === "number" &&
-      (value.expiresAt === undefined || typeof value.expiresAt === "number") &&
+      Number.isFinite(value.storedAt) &&
+      (value.expiresAt === undefined || Number.isFinite(value.expiresAt)) &&
       Object.prototype.hasOwnProperty.call(value, "value")
     );
   }

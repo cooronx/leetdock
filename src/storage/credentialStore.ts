@@ -24,18 +24,21 @@ export class CredentialStore {
   }
 
   public async storeCookie(cookie: string): Promise<void> {
-    const normalized = cookie.trim();
-    if (normalized.length === 0) {
-      throw new Error("Cannot store an empty LeetCode cookie.");
-    }
-    if (/\r|\n/.test(normalized)) {
-      throw new Error("LeetCode cookie contains invalid line breaks.");
-    }
-
-    await this.secrets.store(COOKIE_KEY, normalized);
+    await this.secrets.store(COOKIE_KEY, normalizeLeetCodeCookie(cookie));
   }
 
   public async deleteCookie(): Promise<void> {
     await this.secrets.delete(COOKIE_KEY);
   }
+}
+
+export function normalizeLeetCodeCookie(cookie: string): string {
+  const normalized = cookie.trim();
+  if (normalized.length === 0) {
+    throw new Error("Cannot store an empty LeetCode cookie.");
+  }
+  if (/\r|\n/.test(normalized)) {
+    throw new Error("LeetCode cookie contains invalid line breaks.");
+  }
+  return normalized;
 }

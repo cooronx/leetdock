@@ -1,5 +1,8 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { CredentialStore } from "../storage/credentialStore";
+import {
+  CredentialStore,
+  normalizeLeetCodeCookie,
+} from "../storage/credentialStore";
 import { LeetCodeError } from "./errors";
 import {
   CURRENT_USER_QUERY,
@@ -29,8 +32,8 @@ interface GraphQLErrorPayload {
 }
 
 interface GraphQLResponse<T> {
-  readonly data?: T;
-  readonly errors?: readonly GraphQLErrorPayload[];
+  readonly data?: T | null;
+  readonly errors?: unknown;
 }
 
 interface RawUserStatus {
@@ -123,6 +126,7 @@ interface ClientOptions {
 interface RequestOptions {
   readonly requiresAuthentication?: boolean;
   readonly referer?: string;
+  readonly cookieOverride?: string;
 }
 
 class RequestGate {
@@ -183,21 +187,47 @@ export class LeetCodeClient {
     this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     this.problemIndexEndpoint =
       options.problemIndexEndpoint ?? DEFAULT_PROBLEM_INDEX_ENDPOINT;
-    this.timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    this.maxRetries = Math.max(0, Math.trunc(options.maxRetries ?? DEFAULT_MAX_RETRIES));
+    this.timeoutMs = positiveFiniteNumber(options.timeoutMs, DEFAULT_TIMEOUT_MS, "timeoutMs");
+    this.maxRetries = nonNegativeInteger(
+      options.maxRetries,
+      DEFAULT_MAX_RETRIES,
+      "maxRetries",
+    );
     this.fetchImplementation = options.fetchImplementation ?? fetch;
     this.requestGate = new RequestGate(
-      Math.max(1, Math.trunc(options.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY)),
-      Math.max(0, options.minRequestIntervalMs ?? DEFAULT_MIN_INTERVAL_MS),
+      positiveInteger(
+        options.maxConcurrency,
+        DEFAULT_MAX_CONCURRENCY,
+        "maxConcurrency",
+      ),
+      nonNegativeFiniteNumber(
+        options.minRequestIntervalMs,
+        DEFAULT_MIN_INTERVAL_MS,
+        "minRequestIntervalMs",
+      ),
     );
   }
 
   public async getCurrentUser(): Promise<UserInfo> {
+    return this.loadCurrentUser();
+  }
+
+  /** Validates a callback credential without replacing the stored credential. */
+  public async verifyCookie(cookie: string): Promise<UserInfo> {
+    return this.loadCurrentUser(normalizeLeetCodeCookie(cookie));
+  }
+
+  private async loadCurrentUser(cookieOverride?: string): Promise<UserInfo> {
     const data = await this.request<CurrentUserData>(
       "CurrentUser",
       CURRENT_USER_QUERY,
       {},
-      { referer: "https://leetcode.cn/" },
+      {
+        referer: "https://leetcode.cn/",
+        ...(cookieOverride === undefined
+          ? {}
+          : { cookieOverride, requiresAuthentication: true }),
+      },
     );
     const status = data.userStatus;
     if (status === null || status === undefined) {
@@ -266,8 +296,8 @@ export class LeetCodeClient {
    * GraphQL keyword search does not guarantee that an exact numeric ID is returned.
    */
   public async getProblemIndex(): Promise<readonly ProblemSummary[]> {
-    const cookie = await this.credentials.getCookie();
     return this.runWithRetries(async () => {
+      const cookie = await this.credentials.getCookie();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
@@ -306,35 +336,33 @@ export class LeetCodeClient {
     variables: Readonly<Record<string, unknown>>,
     options: RequestOptions = {},
   ): Promise<T> {
-    const cookie = await this.credentials.getCookie();
-    if (options.requiresAuthentication === true && cookie === undefined) {
-      throw new LeetCodeError("authentication", "Authentication is required.");
-    }
-
-    return this.runWithRetries(() =>
-      this.fetchGraphQL<T>(operationName, query, variables, cookie, options),
-    );
+    return this.runWithRetries(async () => {
+      const cookie =
+        options.cookieOverride ?? (await this.credentials.getCookie());
+      if (options.requiresAuthentication === true && cookie === undefined) {
+        throw new LeetCodeError("authentication", "Authentication is required.");
+      }
+      return this.fetchGraphQL<T>(operationName, query, variables, cookie, options);
+    });
   }
 
   private async runWithRetries<T>(operation: () => Promise<T>): Promise<T> {
-    return this.requestGate.run(async () => {
-      let lastError: LeetCodeError | undefined;
+    let lastError: LeetCodeError | undefined;
 
-      for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
-        try {
-          return await operation();
-        } catch (error) {
-          const normalized = normalizeRequestError(error);
-          lastError = normalized;
-          if (!normalized.retryable || attempt === this.maxRetries) {
-            throw normalized;
-          }
-          await delay(retryDelayMs(attempt, normalized.retryAfterMs));
+    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      try {
+        return await this.requestGate.run(operation);
+      } catch (error) {
+        const normalized = normalizeRequestError(error);
+        lastError = normalized;
+        if (!normalized.retryable || attempt === this.maxRetries) {
+          throw normalized;
         }
+        await delay(retryDelayMs(attempt, normalized.retryAfterMs));
       }
+    }
 
-      throw lastError ?? new LeetCodeError("network", "Request failed.");
-    });
+    throw lastError ?? new LeetCodeError("network", "Request failed.");
   }
 
   private async fetchGraphQL<T>(
@@ -363,26 +391,35 @@ export class LeetCodeClient {
       const rawBody = await response.text();
       let payload: GraphQLResponse<T>;
       try {
-        payload = JSON.parse(rawBody) as GraphQLResponse<T>;
+        const parsed: unknown = JSON.parse(rawBody);
+        if (!isRecord(parsed)) {
+          throw new Error("GraphQL response envelope was not an object.");
+        }
+        payload = parsed as GraphQLResponse<T>;
       } catch (error) {
         throw new LeetCodeError("invalid-response", "Response was not valid JSON.", {
           cause: error,
         });
       }
 
-      if (payload.errors !== undefined && payload.errors.length > 0) {
-        const messages = payload.errors
-          .map((item) => asString(item.message))
+      if (payload.errors !== undefined && payload.errors !== null) {
+        if (!Array.isArray(payload.errors)) {
+          throw new LeetCodeError("invalid-response", "GraphQL errors was not an array.");
+        }
+        const messages = (payload.errors as readonly GraphQLErrorPayload[])
+          .map((item) => (isRecord(item) ? asString(item.message) : undefined))
           .filter((item): item is string => item !== undefined);
-        const joined = messages.join("; ") || "Unknown GraphQL error.";
-        const authenticationFailure = /auth|login|sign.?in|permission/i.test(joined);
-        throw new LeetCodeError(
-          authenticationFailure ? "authentication" : "graphql",
-          joined,
-        );
+        if (payload.errors.length > 0) {
+          const joined = messages.join("; ") || "Unknown GraphQL error.";
+          const authenticationFailure = /auth|login|sign.?in|permission/i.test(joined);
+          throw new LeetCodeError(
+            authenticationFailure ? "authentication" : "graphql",
+            joined,
+          );
+        }
       }
 
-      if (payload.data === undefined) {
+      if (payload.data === undefined || payload.data === null) {
         throw new LeetCodeError("invalid-response", "Response did not contain data.");
       }
 
@@ -449,8 +486,9 @@ function httpError(response: Response): LeetCodeError {
     });
   }
   if (response.status === 429) {
+    const canRetrySoon = retryAfterMs === undefined || retryAfterMs <= 5_000;
     return new LeetCodeError("rate-limit", "LeetCode rate limit reached.", {
-      retryable: true,
+      retryable: canRetrySoon,
       statusCode: response.status,
       retryAfterMs,
     });
@@ -509,13 +547,13 @@ function getErrorCode(error: unknown): string | undefined {
 function parseRetryAfter(value: string): number | undefined {
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(seconds * 1_000, 5_000);
+    return seconds * 1_000;
   }
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) {
     return undefined;
   }
-  return Math.min(Math.max(0, timestamp - Date.now()), 5_000);
+  return Math.max(0, timestamp - Date.now());
 }
 
 function retryDelayMs(attempt: number, retryAfterMs?: number): number {
@@ -648,4 +686,56 @@ function asString(value: unknown): string | undefined {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(Math.trunc(value), minimum), maximum);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function positiveFiniteNumber(
+  value: number | undefined,
+  fallback: number,
+  name: string,
+): number {
+  const resolved = value ?? fallback;
+  if (!Number.isFinite(resolved) || resolved <= 0) {
+    throw new RangeError(`${name} must be a positive finite number.`);
+  }
+  return resolved;
+}
+
+function nonNegativeFiniteNumber(
+  value: number | undefined,
+  fallback: number,
+  name: string,
+): number {
+  const resolved = value ?? fallback;
+  if (!Number.isFinite(resolved) || resolved < 0) {
+    throw new RangeError(`${name} must be a non-negative finite number.`);
+  }
+  return resolved;
+}
+
+function positiveInteger(
+  value: number | undefined,
+  fallback: number,
+  name: string,
+): number {
+  const resolved = positiveFiniteNumber(value, fallback, name);
+  if (!Number.isInteger(resolved)) {
+    throw new RangeError(`${name} must be an integer.`);
+  }
+  return resolved;
+}
+
+function nonNegativeInteger(
+  value: number | undefined,
+  fallback: number,
+  name: string,
+): number {
+  const resolved = nonNegativeFiniteNumber(value, fallback, name);
+  if (!Number.isInteger(resolved)) {
+    throw new RangeError(`${name} must be an integer.`);
+  }
+  return resolved;
 }

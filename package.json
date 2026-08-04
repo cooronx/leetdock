@@ -25,6 +25,20 @@
   "extensionKind": [
     "ui"
   ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "leetdock.signIn",
+        "title": "Sign In",
+        "category": "LeetCode CN"
+      },
+      {
+        "command": "leetdock.signOut",
+        "title": "Sign Out",
+        "category": "LeetCode CN"
+      }
+    ]
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
