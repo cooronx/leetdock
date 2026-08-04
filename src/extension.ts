@@ -189,7 +189,19 @@ async function withAuthExpiryHandling<T>(
     return await operation();
   } catch (error) {
     if (error instanceof LeetCodeError && error.kind === "authentication") {
-      await auth.signOut();
+      const validation = await auth.revalidateAuthentication();
+      if (validation === "valid") {
+        throw new LeetCodeError(
+          "authorization",
+          "LeetCode rejected the request while the session remained valid.",
+        );
+      }
+      if (validation === "unavailable") {
+        throw new LeetCodeError(
+          "service",
+          "Could not verify whether the LeetCode session expired.",
+        );
+      }
     }
     throw error;
   }

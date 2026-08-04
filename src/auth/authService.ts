@@ -26,10 +26,13 @@ export interface AuthSnapshot {
   readonly user?: UserInfo;
 }
 
+export type AuthenticationValidation = "expired" | "unavailable" | "valid";
+
 export class AuthService implements vscode.Disposable {
   private readonly changeEmitter = new vscode.EventEmitter<AuthSnapshot>();
   private snapshotValue: AuthSnapshot = { status: "verifying" };
   private operationTail: Promise<void> = Promise.resolve();
+  private authenticationProbe: Promise<AuthenticationValidation> | undefined;
   private readonly userDataCleanupHandlers = new Set<() => Promise<void>>();
 
   public constructor(
@@ -66,6 +69,21 @@ export class AuthService implements vscode.Disposable {
     return this.serialize(() => this.signOutInternal());
   }
 
+  public revalidateAuthentication(): Promise<AuthenticationValidation> {
+    const existing = this.authenticationProbe;
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const probe = this.serialize(() => this.revalidateAuthenticationInternal());
+    this.authenticationProbe = probe;
+    void probe.then(
+      () => this.releaseAuthenticationProbe(probe),
+      () => this.releaseAuthenticationProbe(probe),
+    );
+    return probe;
+  }
+
   public dispose(): void {
     this.changeEmitter.dispose();
   }
@@ -92,23 +110,22 @@ export class AuthService implements vscode.Disposable {
 
     try {
       const user = await this.client.getCurrentUser();
-      if (!user.isSignedIn || user.username.length === 0) {
+      if (user.isSignedIn === false) {
         await this.clearAuthentication();
         this.update({ status: "signed-out" });
         await vscode.window.showWarningMessage("LeetCode 登录已过期，请重新登录。");
         return;
+      }
+      if (user.username.trim().length === 0) {
+        throw new LeetCodeError(
+          "invalid-response",
+          "Signed-in current user response did not include a username.",
+        );
       }
 
       await this.cache.set(CURRENT_USER_KEY, user);
       this.update({ status: "signed-in", user });
-    } catch (error) {
-      if (error instanceof LeetCodeError && error.kind === "authentication") {
-        await this.clearAuthentication();
-        this.update({ status: "signed-out" });
-        await vscode.window.showWarningMessage("LeetCode 登录已过期，请重新登录。");
-        return;
-      }
-
+    } catch {
       this.update({
         status: "offline",
         ...(cachedUser?.isSignedIn === true ? { user: cachedUser } : {}),
@@ -182,9 +199,16 @@ export class AuthService implements vscode.Disposable {
       this.update(previousSnapshot);
       throw error;
     }
-    if (!user.isSignedIn || user.username.length === 0) {
+    if (user.isSignedIn === false) {
       this.update(previousSnapshot);
       throw new LeetCodeError("authentication", "LeetCode rejected the callback cookie.");
+    }
+    if (user.username.trim().length === 0) {
+      this.update(previousSnapshot);
+      throw new LeetCodeError(
+        "invalid-response",
+        "Signed-in current user response did not include a username.",
+      );
     }
 
     const previousUsername = previousSnapshot.user?.username;
@@ -233,6 +257,46 @@ export class AuthService implements vscode.Disposable {
     this.update({ status: "signed-out" });
   }
 
+  private async revalidateAuthenticationInternal(): Promise<AuthenticationValidation> {
+    const cookie = await this.credentials.getCookie();
+    if (cookie === undefined) {
+      try {
+        await this.clearAuthentication();
+        this.update({ status: "signed-out" });
+        return "expired";
+      } catch {
+        this.update({ status: "offline" });
+        return "unavailable";
+      }
+    }
+
+    const cachedUser = this.snapshotValue.user ??
+      await this.cache.get<UserInfo>(CURRENT_USER_KEY);
+    try {
+      const user = await this.client.getCurrentUser();
+      if (user.isSignedIn === false) {
+        await this.clearAuthentication();
+        this.update({ status: "signed-out" });
+        return "expired";
+      }
+      if (user.username.trim().length === 0) {
+        throw new LeetCodeError(
+          "invalid-response",
+          "Signed-in current user response did not include a username.",
+        );
+      }
+      await this.cache.set(CURRENT_USER_KEY, user);
+      this.update({ status: "signed-in", user });
+      return "valid";
+    } catch {
+      this.update({
+        status: "offline",
+        ...(cachedUser?.isSignedIn === true ? { user: cachedUser } : {}),
+      });
+      return "unavailable";
+    }
+  }
+
   private async clearAuthentication(): Promise<void> {
     await Promise.all([
       this.credentials.deleteCookie(),
@@ -256,6 +320,13 @@ export class AuthService implements vscode.Disposable {
     return result;
   }
 
+  private releaseAuthenticationProbe(
+    probe: Promise<AuthenticationValidation>,
+  ): void {
+    if (this.authenticationProbe === probe) {
+      this.authenticationProbe = undefined;
+    }
+  }
 }
 
 function readSingleRawQueryParameter(query: string, target: string): string {

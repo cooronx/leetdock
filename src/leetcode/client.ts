@@ -29,6 +29,7 @@ const DEFAULT_MIN_INTERVAL_MS = 250;
 
 interface GraphQLErrorPayload {
   readonly message?: unknown;
+  readonly extensions?: unknown;
 }
 
 interface GraphQLResponse<T> {
@@ -233,10 +234,23 @@ export class LeetCodeClient {
     if (status === null || status === undefined) {
       throw new LeetCodeError("invalid-response", "Missing userStatus in response.");
     }
+    if (typeof status.isSignedIn !== "boolean") {
+      throw new LeetCodeError(
+        "invalid-response",
+        "Missing isSignedIn in current user response.",
+      );
+    }
+    const username = asString(status.username) ?? "";
+    if (status.isSignedIn && username.trim().length === 0) {
+      throw new LeetCodeError(
+        "invalid-response",
+        "Signed-in current user response did not include a username.",
+      );
+    }
 
     return {
-      isSignedIn: status.isSignedIn === true,
-      username: asString(status.username) ?? "",
+      isSignedIn: status.isSignedIn,
+      username,
       isPremium: status.isPremium === true,
       ...(asString(status.avatar) === undefined ? {} : { avatar: asString(status.avatar) }),
     };
@@ -411,11 +425,7 @@ export class LeetCodeClient {
           .filter((item): item is string => item !== undefined);
         if (payload.errors.length > 0) {
           const joined = messages.join("; ") || "Unknown GraphQL error.";
-          const authenticationFailure = /auth|login|sign.?in|permission/i.test(joined);
-          throw new LeetCodeError(
-            authenticationFailure ? "authentication" : "graphql",
-            joined,
-          );
+          throw new LeetCodeError(classifyGraphQLErrors(payload.errors), joined);
         }
       }
 
@@ -480,8 +490,13 @@ function httpError(response: Response): LeetCodeError {
   const retryAfter = response.headers.get("retry-after");
   const retryAfterMs = retryAfter === null ? undefined : parseRetryAfter(retryAfter);
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     return new LeetCodeError("authentication", `Authentication failed (${response.status}).`, {
+      statusCode: response.status,
+    });
+  }
+  if (response.status === 403) {
+    return new LeetCodeError("authorization", "LeetCode rejected the request (403).", {
       statusCode: response.status,
     });
   }
@@ -526,6 +541,45 @@ function normalizeRequestError(error: unknown): LeetCodeError {
     cause: error,
     retryable: true,
   });
+}
+
+function classifyGraphQLErrors(
+  errors: readonly unknown[],
+): "authentication" | "authorization" | "graphql" {
+  const codes = errors
+    .map((item) => graphQLErrorCode(item))
+    .filter((code): code is string => code !== undefined);
+  if (codes.some((code) => code === "UNAUTHENTICATED")) {
+    return "authentication";
+  }
+  if (codes.some((code) => code === "FORBIDDEN")) {
+    return "authorization";
+  }
+
+  const message = errors
+    .map((item) => (isRecord(item) ? asString(item.message) : undefined))
+    .filter((item): item is string => item !== undefined)
+    .join("; ");
+  if (
+    /\b(?:not authenticated|unauthenticated|authentication (?:required|failed|expired)|login required|sign[- ]?in required)\b|please (?:log|sign)[- ]?in/i.test(message)
+  ) {
+    return "authentication";
+  }
+  if (/\b(?:forbidden|permission denied|not authorized|csrf)\b/i.test(message)) {
+    return "authorization";
+  }
+  return "graphql";
+}
+
+function graphQLErrorCode(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const extensions = value.extensions;
+  if (!isRecord(extensions)) {
+    return undefined;
+  }
+  return asString(extensions.code)?.toUpperCase();
 }
 
 function getErrorCode(error: unknown): string | undefined {

@@ -1,5 +1,6 @@
 export type LeetCodeErrorKind =
   | "authentication"
+  | "authorization"
   | "dns"
   | "graphql"
   | "invalid-response"
@@ -43,6 +44,8 @@ export function toUserMessage(error: unknown): string {
   switch (error.kind) {
     case "authentication":
       return "LeetCode 登录已过期，请重新登录。";
+    case "authorization":
+      return "当前 LeetCode 账号无权访问该内容或请求被拒绝。";
     case "dns":
       return "无法解析 leetcode.cn，请检查 DNS 或网络设置。";
     case "timeout":
