@@ -1,0 +1,651 @@
+import { setTimeout as delay } from "node:timers/promises";
+import { CredentialStore } from "../storage/credentialStore";
+import { LeetCodeError } from "./errors";
+import {
+  CURRENT_USER_QUERY,
+  PROBLEM_DETAIL_QUERY,
+  PROBLEM_LIST_QUERY,
+} from "./graphql";
+import type {
+  CodeSnippet,
+  Difficulty,
+  ProblemDetail,
+  ProblemSearchPage,
+  ProblemStatus,
+  ProblemSummary,
+  ProblemTag,
+  UserInfo,
+} from "./types";
+
+const DEFAULT_ENDPOINT = "https://leetcode.cn/graphql/";
+const DEFAULT_PROBLEM_INDEX_ENDPOINT = "https://leetcode.cn/api/problems/all/";
+const DEFAULT_TIMEOUT_MS = 12_000;
+const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_MAX_CONCURRENCY = 2;
+const DEFAULT_MIN_INTERVAL_MS = 250;
+
+interface GraphQLErrorPayload {
+  readonly message?: unknown;
+}
+
+interface GraphQLResponse<T> {
+  readonly data?: T;
+  readonly errors?: readonly GraphQLErrorPayload[];
+}
+
+interface RawUserStatus {
+  readonly isSignedIn?: unknown;
+  readonly username?: unknown;
+  readonly isPremium?: unknown;
+  readonly avatar?: unknown;
+}
+
+interface CurrentUserData {
+  readonly userStatus?: RawUserStatus | null;
+}
+
+interface RawProblemSummary {
+  readonly frontendQuestionId?: unknown;
+  readonly title?: unknown;
+  readonly titleCn?: unknown;
+  readonly titleSlug?: unknown;
+  readonly difficulty?: unknown;
+  readonly paidOnly?: unknown;
+  readonly status?: unknown;
+}
+
+interface ProblemListData {
+  readonly problemsetQuestionList?: {
+    readonly hasMore?: unknown;
+    readonly total?: unknown;
+    readonly questions?: readonly RawProblemSummary[] | null;
+  } | null;
+}
+
+interface RawProblemTag {
+  readonly name?: unknown;
+  readonly translatedName?: unknown;
+  readonly slug?: unknown;
+}
+
+interface RawCodeSnippet {
+  readonly lang?: unknown;
+  readonly langSlug?: unknown;
+  readonly code?: unknown;
+}
+
+interface RawProblemDetail {
+  readonly questionFrontendId?: unknown;
+  readonly title?: unknown;
+  readonly translatedTitle?: unknown;
+  readonly titleSlug?: unknown;
+  readonly content?: unknown;
+  readonly translatedContent?: unknown;
+  readonly difficulty?: unknown;
+  readonly topicTags?: readonly RawProblemTag[] | null;
+  readonly codeSnippets?: readonly RawCodeSnippet[] | null;
+  readonly exampleTestcases?: unknown;
+  readonly sampleTestCase?: unknown;
+  readonly hints?: readonly unknown[] | null;
+  readonly isPaidOnly?: unknown;
+  readonly status?: unknown;
+}
+
+interface ProblemDetailData {
+  readonly question?: RawProblemDetail | null;
+}
+
+interface RawProblemIndexEntry {
+  readonly stat?: {
+    readonly frontend_question_id?: unknown;
+    readonly question__title?: unknown;
+    readonly question__title_slug?: unknown;
+  } | null;
+  readonly status?: unknown;
+  readonly difficulty?: { readonly level?: unknown } | null;
+  readonly paid_only?: unknown;
+}
+
+interface ProblemIndexData {
+  readonly stat_status_pairs?: readonly RawProblemIndexEntry[] | null;
+}
+
+interface ClientOptions {
+  readonly endpoint?: string;
+  readonly problemIndexEndpoint?: string;
+  readonly timeoutMs?: number;
+  readonly maxRetries?: number;
+  readonly maxConcurrency?: number;
+  readonly minRequestIntervalMs?: number;
+  readonly fetchImplementation?: typeof fetch;
+}
+
+interface RequestOptions {
+  readonly requiresAuthentication?: boolean;
+  readonly referer?: string;
+}
+
+class RequestGate {
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
+  private nextStartAt = 0;
+
+  public constructor(
+    private readonly maxConcurrency: number,
+    private readonly minIntervalMs: number,
+  ) {}
+
+  public async run<T>(operation: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      const waitMs = Math.max(0, this.nextStartAt - Date.now());
+      this.nextStartAt = Math.max(Date.now(), this.nextStartAt) + this.minIntervalMs;
+      if (waitMs > 0) {
+        await delay(waitMs);
+      }
+      return await operation();
+    } finally {
+      this.release();
+    }
+  }
+
+  private async acquire(): Promise<void> {
+    if (this.active < this.maxConcurrency) {
+      this.active += 1;
+      return;
+    }
+
+    await new Promise<void>((resolve) => this.waiting.push(resolve));
+  }
+
+  private release(): void {
+    const next = this.waiting.shift();
+    if (next === undefined) {
+      this.active -= 1;
+      return;
+    }
+    next();
+  }
+}
+
+export class LeetCodeClient {
+  private readonly endpoint: string;
+  private readonly problemIndexEndpoint: string;
+  private readonly timeoutMs: number;
+  private readonly maxRetries: number;
+  private readonly fetchImplementation: typeof fetch;
+  private readonly requestGate: RequestGate;
+
+  public constructor(
+    private readonly credentials: CredentialStore,
+    options: ClientOptions = {},
+  ) {
+    this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
+    this.problemIndexEndpoint =
+      options.problemIndexEndpoint ?? DEFAULT_PROBLEM_INDEX_ENDPOINT;
+    this.timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    this.maxRetries = Math.max(0, Math.trunc(options.maxRetries ?? DEFAULT_MAX_RETRIES));
+    this.fetchImplementation = options.fetchImplementation ?? fetch;
+    this.requestGate = new RequestGate(
+      Math.max(1, Math.trunc(options.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY)),
+      Math.max(0, options.minRequestIntervalMs ?? DEFAULT_MIN_INTERVAL_MS),
+    );
+  }
+
+  public async getCurrentUser(): Promise<UserInfo> {
+    const data = await this.request<CurrentUserData>(
+      "CurrentUser",
+      CURRENT_USER_QUERY,
+      {},
+      { referer: "https://leetcode.cn/" },
+    );
+    const status = data.userStatus;
+    if (status === null || status === undefined) {
+      throw new LeetCodeError("invalid-response", "Missing userStatus in response.");
+    }
+
+    return {
+      isSignedIn: status.isSignedIn === true,
+      username: asString(status.username) ?? "",
+      isPremium: status.isPremium === true,
+      ...(asString(status.avatar) === undefined ? {} : { avatar: asString(status.avatar) }),
+    };
+  }
+
+  public async searchProblems(
+    keyword: string,
+    skip = 0,
+    limit = 50,
+  ): Promise<ProblemSearchPage> {
+    const normalizedKeyword = keyword.trim();
+    const data = await this.request<ProblemListData>(
+      "ProblemsetQuestionList",
+      PROBLEM_LIST_QUERY,
+      {
+        limit: clamp(limit, 1, 100),
+        skip: Math.max(0, Math.trunc(skip)),
+        filters: { searchKeywords: normalizedKeyword },
+      },
+      { referer: "https://leetcode.cn/problemset/" },
+    );
+
+    const list = data.problemsetQuestionList;
+    if (list === null || list === undefined || !Array.isArray(list.questions)) {
+      throw new LeetCodeError("invalid-response", "Missing problem list in response.");
+    }
+
+    return {
+      questions: list.questions.map(mapProblemSummary),
+      total: typeof list.total === "number" ? list.total : list.questions.length,
+      hasMore: list.hasMore === true,
+    };
+  }
+
+  public async getProblem(titleSlug: string): Promise<ProblemDetail> {
+    const normalizedSlug = titleSlug.trim();
+    if (normalizedSlug.length === 0) {
+      throw new LeetCodeError("not-found", "Problem slug is empty.");
+    }
+
+    const data = await this.request<ProblemDetailData>(
+      "QuestionData",
+      PROBLEM_DETAIL_QUERY,
+      { titleSlug: normalizedSlug },
+      { referer: `https://leetcode.cn/problems/${encodeURIComponent(normalizedSlug)}/` },
+    );
+
+    if (data.question === null || data.question === undefined) {
+      throw new LeetCodeError("not-found", `Problem not found: ${normalizedSlug}`);
+    }
+
+    return mapProblemDetail(data.question);
+  }
+
+  /**
+   * Loads LeetCode's single-request public index for reliable frontend ID lookup.
+   * GraphQL keyword search does not guarantee that an exact numeric ID is returned.
+   */
+  public async getProblemIndex(): Promise<readonly ProblemSummary[]> {
+    const cookie = await this.credentials.getCookie();
+    return this.runWithRetries(async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const response = await this.fetchImplementation(this.problemIndexEndpoint, {
+          method: "GET",
+          headers: buildHeaders(cookie, "https://leetcode.cn/problemset/", this.problemIndexEndpoint),
+          redirect: "error",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw httpError(response);
+        }
+
+        let payload: ProblemIndexData;
+        try {
+          payload = JSON.parse(await response.text()) as ProblemIndexData;
+        } catch (error) {
+          throw new LeetCodeError("invalid-response", "Problem index was not valid JSON.", {
+            cause: error,
+          });
+        }
+
+        if (!Array.isArray(payload.stat_status_pairs)) {
+          throw new LeetCodeError("invalid-response", "Problem index was missing entries.");
+        }
+        return payload.stat_status_pairs.map(mapProblemIndexEntry);
+      } finally {
+        clearTimeout(timeout);
+      }
+    });
+  }
+
+  private async request<T>(
+    operationName: string,
+    query: string,
+    variables: Readonly<Record<string, unknown>>,
+    options: RequestOptions = {},
+  ): Promise<T> {
+    const cookie = await this.credentials.getCookie();
+    if (options.requiresAuthentication === true && cookie === undefined) {
+      throw new LeetCodeError("authentication", "Authentication is required.");
+    }
+
+    return this.runWithRetries(() =>
+      this.fetchGraphQL<T>(operationName, query, variables, cookie, options),
+    );
+  }
+
+  private async runWithRetries<T>(operation: () => Promise<T>): Promise<T> {
+    return this.requestGate.run(async () => {
+      let lastError: LeetCodeError | undefined;
+
+      for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+        try {
+          return await operation();
+        } catch (error) {
+          const normalized = normalizeRequestError(error);
+          lastError = normalized;
+          if (!normalized.retryable || attempt === this.maxRetries) {
+            throw normalized;
+          }
+          await delay(retryDelayMs(attempt, normalized.retryAfterMs));
+        }
+      }
+
+      throw lastError ?? new LeetCodeError("network", "Request failed.");
+    });
+  }
+
+  private async fetchGraphQL<T>(
+    operationName: string,
+    query: string,
+    variables: Readonly<Record<string, unknown>>,
+    cookie: string | undefined,
+    options: RequestOptions,
+  ): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await this.fetchImplementation(this.endpoint, {
+        method: "POST",
+        headers: buildHeaders(cookie, options.referer, this.endpoint),
+        body: JSON.stringify({ operationName, query, variables }),
+        redirect: "error",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw httpError(response);
+      }
+
+      const rawBody = await response.text();
+      let payload: GraphQLResponse<T>;
+      try {
+        payload = JSON.parse(rawBody) as GraphQLResponse<T>;
+      } catch (error) {
+        throw new LeetCodeError("invalid-response", "Response was not valid JSON.", {
+          cause: error,
+        });
+      }
+
+      if (payload.errors !== undefined && payload.errors.length > 0) {
+        const messages = payload.errors
+          .map((item) => asString(item.message))
+          .filter((item): item is string => item !== undefined);
+        const joined = messages.join("; ") || "Unknown GraphQL error.";
+        const authenticationFailure = /auth|login|sign.?in|permission/i.test(joined);
+        throw new LeetCodeError(
+          authenticationFailure ? "authentication" : "graphql",
+          joined,
+        );
+      }
+
+      if (payload.data === undefined) {
+        throw new LeetCodeError("invalid-response", "Response did not contain data.");
+      }
+
+      return payload.data;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function buildHeaders(
+  cookie: string | undefined,
+  referer: string | undefined,
+  endpoint: string,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    Origin: "https://leetcode.cn",
+    Referer: referer ?? "https://leetcode.cn/",
+    "User-Agent": "LeetDock VS Code Extension",
+  };
+
+  if (cookie !== undefined && isTrustedLeetCodeEndpoint(endpoint)) {
+    headers.Cookie = cookie;
+    const csrfToken = extractCookieValue(cookie, "csrftoken");
+    if (csrfToken !== undefined) {
+      headers["X-CSRFToken"] = csrfToken;
+    }
+  }
+
+  return headers;
+}
+
+function isTrustedLeetCodeEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === "https:" && url.hostname === "leetcode.cn";
+  } catch {
+    return false;
+  }
+}
+
+function extractCookieValue(cookie: string, name: string): string | undefined {
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`, "i"));
+  const value = match?.[1];
+  if (value === undefined || value.length === 0) {
+    return undefined;
+  }
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function httpError(response: Response): LeetCodeError {
+  const retryAfter = response.headers.get("retry-after");
+  const retryAfterMs = retryAfter === null ? undefined : parseRetryAfter(retryAfter);
+
+  if (response.status === 401 || response.status === 403) {
+    return new LeetCodeError("authentication", `Authentication failed (${response.status}).`, {
+      statusCode: response.status,
+    });
+  }
+  if (response.status === 429) {
+    return new LeetCodeError("rate-limit", "LeetCode rate limit reached.", {
+      retryable: true,
+      statusCode: response.status,
+      retryAfterMs,
+    });
+  }
+  if (response.status >= 500) {
+    return new LeetCodeError("service", `LeetCode service error (${response.status}).`, {
+      retryable: true,
+      statusCode: response.status,
+    });
+  }
+  return new LeetCodeError("service", `LeetCode request failed (${response.status}).`, {
+    statusCode: response.status,
+  });
+}
+
+function normalizeRequestError(error: unknown): LeetCodeError {
+  if (error instanceof LeetCodeError) {
+    return error;
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    return new LeetCodeError("timeout", "LeetCode request timed out.", {
+      cause: error,
+      retryable: true,
+    });
+  }
+
+  const code = getErrorCode(error);
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
+    return new LeetCodeError("dns", "Could not resolve leetcode.cn.", {
+      cause: error,
+      retryable: true,
+    });
+  }
+  return new LeetCodeError("network", "LeetCode request failed.", {
+    cause: error,
+    retryable: true,
+  });
+}
+
+function getErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+  const direct = Reflect.get(error, "code");
+  if (typeof direct === "string") {
+    return direct;
+  }
+  const cause = Reflect.get(error, "cause");
+  if (typeof cause === "object" && cause !== null) {
+    const nested = Reflect.get(cause, "code");
+    return typeof nested === "string" ? nested : undefined;
+  }
+  return undefined;
+}
+
+function parseRetryAfter(value: string): number | undefined {
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1_000, 5_000);
+  }
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return undefined;
+  }
+  return Math.min(Math.max(0, timestamp - Date.now()), 5_000);
+}
+
+function retryDelayMs(attempt: number, retryAfterMs?: number): number {
+  if (retryAfterMs !== undefined) {
+    return retryAfterMs;
+  }
+  return Math.min(500 * 2 ** attempt, 2_000);
+}
+
+function mapProblemSummary(raw: RawProblemSummary): ProblemSummary {
+  return {
+    frontendId: requiredString(raw.frontendQuestionId, "frontendQuestionId"),
+    title: requiredString(raw.title, "title"),
+    ...(asString(raw.titleCn) === undefined
+      ? {}
+      : { translatedTitle: asString(raw.titleCn) }),
+    titleSlug: requiredString(raw.titleSlug, "titleSlug"),
+    difficulty: mapDifficulty(raw.difficulty),
+    paidOnly: raw.paidOnly === true,
+    status: mapStatus(raw.status),
+  };
+}
+
+function mapProblemDetail(raw: RawProblemDetail): ProblemDetail {
+  const tags: ProblemTag[] = (raw.topicTags ?? []).map((tag) => ({
+    name: requiredString(tag.name, "topicTags.name"),
+    ...(asString(tag.translatedName) === undefined
+      ? {}
+      : { translatedName: asString(tag.translatedName) }),
+    slug: requiredString(tag.slug, "topicTags.slug"),
+  }));
+  const codeSnippets: CodeSnippet[] = (raw.codeSnippets ?? []).map((snippet) => ({
+    language: requiredString(snippet.lang, "codeSnippets.lang"),
+    languageSlug: requiredString(snippet.langSlug, "codeSnippets.langSlug"),
+    code: requiredString(snippet.code, "codeSnippets.code"),
+  }));
+
+  return {
+    frontendId: requiredString(raw.questionFrontendId, "questionFrontendId"),
+    title: requiredString(raw.title, "title"),
+    ...(asString(raw.translatedTitle) === undefined
+      ? {}
+      : { translatedTitle: asString(raw.translatedTitle) }),
+    titleSlug: requiredString(raw.titleSlug, "titleSlug"),
+    content: asString(raw.content) ?? "",
+    ...(asString(raw.translatedContent) === undefined
+      ? {}
+      : { translatedContent: asString(raw.translatedContent) }),
+    difficulty: mapDifficulty(raw.difficulty),
+    paidOnly: raw.isPaidOnly === true,
+    status: mapStatus(raw.status),
+    tags,
+    codeSnippets,
+    ...(asString(raw.exampleTestcases) === undefined
+      ? {}
+      : { exampleTestcases: asString(raw.exampleTestcases) }),
+    ...(asString(raw.sampleTestCase) === undefined
+      ? {}
+      : { sampleTestCase: asString(raw.sampleTestCase) }),
+    hints: (raw.hints ?? []).filter((hint): hint is string => typeof hint === "string"),
+  };
+}
+
+function mapProblemIndexEntry(raw: RawProblemIndexEntry): ProblemSummary {
+  const stat = raw.stat;
+  if (stat === null || stat === undefined) {
+    throw new LeetCodeError("invalid-response", "Problem index entry was missing stat.");
+  }
+
+  return {
+    frontendId: requiredString(stat.frontend_question_id, "frontend_question_id"),
+    title: requiredString(stat.question__title, "question__title"),
+    titleSlug: requiredString(stat.question__title_slug, "question__title_slug"),
+    difficulty: mapDifficultyLevel(raw.difficulty?.level),
+    paidOnly: raw.paid_only === true,
+    status: mapStatus(raw.status),
+  };
+}
+
+function mapDifficulty(value: unknown): Difficulty {
+  switch (asString(value)?.toLowerCase()) {
+    case "easy":
+      return "Easy";
+    case "medium":
+      return "Medium";
+    case "hard":
+      return "Hard";
+    default:
+      throw new LeetCodeError("invalid-response", "Unknown problem difficulty.");
+  }
+}
+
+function mapDifficultyLevel(value: unknown): Difficulty {
+  switch (value) {
+    case 1:
+      return "Easy";
+    case 2:
+      return "Medium";
+    case 3:
+      return "Hard";
+    default:
+      throw new LeetCodeError("invalid-response", "Unknown problem difficulty level.");
+  }
+}
+
+function mapStatus(value: unknown): ProblemStatus {
+  switch (asString(value)?.toUpperCase()) {
+    case "AC":
+    case "ACCEPTED":
+      return "AC";
+    case "ATTEMPTED":
+    case "TRIED":
+      return "TRIED";
+    default:
+      return null;
+  }
+}
+
+function requiredString(value: unknown, field: string, allowEmpty = false): string {
+  const result = asString(value);
+  if (result === undefined || (!allowEmpty && result.length === 0)) {
+    throw new LeetCodeError("invalid-response", `Missing ${field} in response.`);
+  }
+  return result;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(Math.max(Math.trunc(value), minimum), maximum);
+}
