@@ -23,7 +23,7 @@
   ],
   "main": "./dist/extension.js",
   "extensionKind": [
-    "ui"
+    "workspace"
   ],
   "contributes": {
     "commands": [
@@ -140,7 +140,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
-    "check": "tsc --noEmit -p .",
+    "check": "tsc --noEmit -p . && npm run check:extension-host",
+    "check:extension-host": "node scripts/check-extension-host.cjs",
     "watch": "tsc --watch -p ."
   },
   "dependencies": {
