@@ -1,0 +1,44 @@
+{
+  "name": "leetdock",
+  "displayName": "LeetDock",
+  "description": "A focused LeetCode China workflow for Visual Studio Code.",
+  "version": "0.1.0",
+  "publisher": "cooronx",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "leetcode",
+    "leetcode-cn",
+    "algorithm"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onUri"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "ui"
+  ],
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p .",
+    "check": "tsc --noEmit -p .",
+    "watch": "tsc --watch -p ."
+  },
+  "dependencies": {
+    "katex": "^0.18.1",
+    "sanitize-html": "^2.17.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/sanitize-html": "^2.16.1",
+    "@types/vscode": "1.90.0",
+    "typescript": "~5.9.3"
+  }
+}

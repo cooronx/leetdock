@@ -1,0 +1,11 @@
+.git/**
+.agents/**
+.codex/**
+chores/**
+src/**
+.gitignore
+tsconfig.json
+**/*.map
+coverage/**
+.vscode-test/**
+.vscode-test-web/**
