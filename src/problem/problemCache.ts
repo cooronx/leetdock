@@ -25,7 +25,19 @@ type StoredStatus = Exclude<ProblemStatus, null>;
 type UserStatuses = Readonly<Record<string, StoredStatus>>;
 
 export class ProblemCache {
+  private userDataGeneration = 0;
+  private mutationTail: Promise<void> = Promise.resolve();
+
   public constructor(private readonly cache: CacheStorage) {}
+
+  /** Captures the current account boundary for a request that may return later. */
+  public captureUserDataGeneration(): number {
+    return this.userDataGeneration;
+  }
+
+  public isUserDataGenerationCurrent(generation: number): boolean {
+    return generation === this.userDataGeneration;
+  }
 
   public async getSearch(key: string): Promise<ProblemSearchPage | undefined> {
     const page = await this.cache.get<ProblemSearchPage>(`${SEARCH_PREFIX}${key}`);
@@ -34,13 +46,22 @@ export class ProblemCache {
       : { ...page, questions: await this.withStatuses(page.questions) };
   }
 
-  public async setSearch(key: string, page: ProblemSearchPage): Promise<void> {
-    await this.captureStatuses(page.questions);
-    await this.cache.set(
-      `${SEARCH_PREFIX}${key}`,
-      { ...page, questions: page.questions.map(stripStatus) },
-      SEARCH_TTL_MS,
-    );
+  public setSearch(
+    key: string,
+    page: ProblemSearchPage,
+    generation: number,
+  ): Promise<void> {
+    return this.serializeMutation(async () => {
+      if (generation !== this.userDataGeneration) {
+        return;
+      }
+      await this.captureStatusesUnqueued(page.questions, generation);
+      await this.cache.set(
+        `${SEARCH_PREFIX}${key}`,
+        { ...page, questions: page.questions.map(stripStatus) },
+        SEARCH_TTL_MS,
+      );
+    });
   }
 
   public async getIndex(): Promise<readonly ProblemSummary[] | undefined> {
@@ -48,9 +69,17 @@ export class ProblemCache {
     return index === undefined ? undefined : this.withStatuses(index);
   }
 
-  public async setIndex(index: readonly ProblemSummary[]): Promise<void> {
-    await this.captureStatuses(index);
-    await this.cache.set(INDEX_KEY, index.map(stripStatus), INDEX_TTL_MS);
+  public setIndex(
+    index: readonly ProblemSummary[],
+    generation: number,
+  ): Promise<void> {
+    return this.serializeMutation(async () => {
+      if (generation !== this.userDataGeneration) {
+        return;
+      }
+      await this.captureStatusesUnqueued(index, generation);
+      await this.cache.set(INDEX_KEY, index.map(stripStatus), INDEX_TTL_MS);
+    });
   }
 
   public async getDetail(titleSlug: string): Promise<ProblemDetail | undefined> {
@@ -68,36 +97,54 @@ export class ProblemCache {
     return withStatus;
   }
 
-  public async setDetail(detail: ProblemDetail): Promise<void> {
-    await this.captureStatuses([detail]);
-    if (detail.paidOnly) {
-      // Paid content is account-scoped and must never survive a login boundary.
-      await this.deleteDetail(detail.titleSlug);
-      return;
-    }
-    await this.cache.set(
-      `${DETAIL_PREFIX}${normalizeSlug(detail.titleSlug)}`,
-      stripStatus(detail),
-      DETAIL_TTL_MS,
+  public setDetail(
+    detail: ProblemDetail,
+    generation: number,
+  ): Promise<void> {
+    return this.serializeMutation(async () => {
+      if (generation !== this.userDataGeneration) {
+        return;
+      }
+      await this.captureStatusesUnqueued([detail], generation);
+      if (detail.paidOnly) {
+        // Paid content is account-scoped and must never survive a login boundary.
+        await this.cache.delete(`${DETAIL_PREFIX}${normalizeSlug(detail.titleSlug)}`);
+        return;
+      }
+      await this.cache.set(
+        `${DETAIL_PREFIX}${normalizeSlug(detail.titleSlug)}`,
+        stripStatus(detail),
+        DETAIL_TTL_MS,
+      );
+    });
+  }
+
+  public deleteDetail(titleSlug: string): Promise<void> {
+    return this.serializeMutation(() =>
+      this.cache.delete(`${DETAIL_PREFIX}${normalizeSlug(titleSlug)}`)
     );
   }
 
-  public async deleteDetail(titleSlug: string): Promise<void> {
-    await this.cache.delete(`${DETAIL_PREFIX}${normalizeSlug(titleSlug)}`);
-  }
-
-  public async addRecent(problem: ProblemSummary): Promise<void> {
-    await this.captureStatuses([problem]);
-    const existing = await this.cache.get<readonly RecentProblem[]>(RECENT_KEY) ?? [];
-    const recent: RecentProblem = {
-      ...stripStatus(problem),
-      openedAt: Date.now(),
-    };
-    const next = [
-      recent,
-      ...existing.filter((item) => item.titleSlug !== problem.titleSlug),
-    ].slice(0, RECENT_LIMIT);
-    await this.cache.set(RECENT_KEY, next);
+  public async addRecent(
+    problem: ProblemSummary,
+    generation: number,
+  ): Promise<void> {
+    await this.serializeMutation(async () => {
+      if (generation !== this.userDataGeneration) {
+        return;
+      }
+      await this.captureStatusesUnqueued([problem], generation);
+      const existing = await this.cache.get<readonly RecentProblem[]>(RECENT_KEY) ?? [];
+      const recent: RecentProblem = {
+        ...stripStatus(problem),
+        openedAt: Date.now(),
+      };
+      const next = [
+        recent,
+        ...existing.filter((item) => item.titleSlug !== problem.titleSlug),
+      ].slice(0, RECENT_LIMIT);
+      await this.cache.set(RECENT_KEY, next);
+    });
   }
 
   public async getRecent(): Promise<readonly RecentProblem[]> {
@@ -105,27 +152,42 @@ export class ProblemCache {
     return this.withStatuses(recent);
   }
 
-  public async clearProblemLists(): Promise<void> {
-    await Promise.all([
-      this.cache.delete(INDEX_KEY),
-      this.cache.clear(SEARCH_PREFIX),
-    ]);
+  public clearProblemLists(): Promise<void> {
+    return this.serializeMutation(async () => {
+      await Promise.all([
+        this.cache.delete(INDEX_KEY),
+        this.cache.clear(SEARCH_PREFIX),
+      ]);
+    });
   }
 
-  public async clearUserData(): Promise<void> {
-    await this.cache.delete(USER_STATUSES_KEY);
+  public clearUserData(): Promise<void> {
+    this.userDataGeneration += 1;
+    return this.serializeMutation(() =>
+      this.cache.delete(USER_STATUSES_KEY)
+    );
   }
 
-  public async clearAll(): Promise<void> {
-    await Promise.all([
-      this.clearProblemLists(),
-      this.cache.clear(DETAIL_PREFIX),
-      this.cache.delete(RECENT_KEY),
-      this.clearUserData(),
-    ]);
+  public clearAll(): Promise<void> {
+    this.userDataGeneration += 1;
+    return this.serializeMutation(async () => {
+      await Promise.all([
+        this.cache.delete(INDEX_KEY),
+        this.cache.clear(SEARCH_PREFIX),
+        this.cache.clear(DETAIL_PREFIX),
+        this.cache.delete(RECENT_KEY),
+        this.cache.delete(USER_STATUSES_KEY),
+      ]);
+    });
   }
 
-  private async captureStatuses(problems: readonly ProblemSummary[]): Promise<void> {
+  private async captureStatusesUnqueued(
+    problems: readonly ProblemSummary[],
+    generation: number,
+  ): Promise<void> {
+    if (generation !== this.userDataGeneration) {
+      return;
+    }
     const updates = problems.filter(
       (problem): problem is ProblemSummary & { readonly status: StoredStatus } =>
         problem.status !== null,
@@ -135,11 +197,23 @@ export class ProblemCache {
     }
 
     const current = await this.cache.get<UserStatuses>(USER_STATUSES_KEY) ?? {};
+    if (generation !== this.userDataGeneration) {
+      return;
+    }
     const next: Record<string, StoredStatus> = { ...current };
     for (const problem of updates) {
       next[problem.titleSlug] = problem.status;
     }
     await this.cache.set(USER_STATUSES_KEY, next);
+  }
+
+  private serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(operation, operation);
+    this.mutationTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   private async withStatuses<T extends ProblemSummary>(

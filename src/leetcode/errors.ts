@@ -7,6 +7,7 @@ export type LeetCodeErrorKind =
   | "not-found"
   | "rate-limit"
   | "service"
+  | "stale-session"
   | "timeout";
 
 interface LeetCodeErrorOptions {
@@ -50,6 +51,8 @@ export function toUserMessage(error: unknown): string {
       return "请求过于频繁，请稍后再试。";
     case "service":
       return "LeetCode 服务暂时不可用，请稍后重试。";
+    case "stale-session":
+      return "LeetCode 登录状态已发生变化，请重试。";
     case "graphql":
       return "LeetCode 返回了接口错误，请稍后重试。";
     case "not-found":

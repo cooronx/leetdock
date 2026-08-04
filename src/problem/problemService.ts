@@ -76,6 +76,7 @@ export class ProblemService {
     if (normalized.length === 0) {
       throw new LeetCodeError("not-found", "Search keyword is empty.");
     }
+    const userDataGeneration = this.cache.captureUserDataGeneration();
 
     const cacheKey = searchCacheKey(normalized);
     let page: ProblemSearchPage | undefined;
@@ -110,22 +111,26 @@ export class ProblemService {
           hasMore: nextPage.hasMore,
         };
       }
-      await this.cache.setSearch(cacheKey, page);
+      await this.cache.setSearch(cacheKey, page, userDataGeneration);
     }
 
-    return [...page.questions].sort((left, right) =>
+    const sorted = [...page.questions].sort((left, right) =>
       compareProblems(left, right, normalized),
     );
+    this.assertCurrentGeneration(userDataGeneration);
+    return sorted;
   }
 
   public async openProblem(titleSlug: string, forceRefresh = false): Promise<ProblemDetail> {
     const normalized = titleSlug.trim();
+    const userDataGeneration = this.cache.captureUserDataGeneration();
     let detail = forceRefresh ? undefined : await this.cache.getDetail(normalized);
     if (detail === undefined) {
       detail = await this.client.getProblem(normalized);
-      await this.cache.setDetail(detail);
+      await this.cache.setDetail(detail, userDataGeneration);
     }
-    await this.cache.addRecent(detail);
+    await this.cache.addRecent(detail, userDataGeneration);
+    this.assertCurrentGeneration(userDataGeneration);
     return detail;
   }
 
@@ -135,9 +140,11 @@ export class ProblemService {
   }
 
   public async refreshProblemList(): Promise<void> {
+    const userDataGeneration = this.cache.captureUserDataGeneration();
     const index = await this.client.getProblemIndex();
     await this.cache.clearProblemLists();
-    await this.cache.setIndex(index);
+    await this.cache.setIndex(index, userDataGeneration);
+    this.assertCurrentGeneration(userDataGeneration);
   }
 
   public async getRecent(): Promise<readonly RecentProblem[]> {
@@ -149,13 +156,25 @@ export class ProblemService {
   }
 
   private async getProblemIndex(): Promise<readonly ProblemSummary[]> {
+    const userDataGeneration = this.cache.captureUserDataGeneration();
     const cached = await this.cache.getIndex();
     if (cached !== undefined) {
+      this.assertCurrentGeneration(userDataGeneration);
       return cached;
     }
     const index = await this.client.getProblemIndex();
-    await this.cache.setIndex(index);
+    await this.cache.setIndex(index, userDataGeneration);
+    this.assertCurrentGeneration(userDataGeneration);
     return index;
+  }
+
+  private assertCurrentGeneration(generation: number): void {
+    if (!this.cache.isUserDataGenerationCurrent(generation)) {
+      throw new LeetCodeError(
+        "stale-session",
+        "Authentication changed while loading problem data.",
+      );
+    }
   }
 }
 
