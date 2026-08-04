@@ -154,9 +154,11 @@ export function activate(context: vscode.ExtensionContext): void {
       handleUri: (uri) =>
         runWithErrorMessage(async () => {
           const user = await auth.handleUri(uri);
-          await vscode.window.showInformationMessage(
-            `LeetCode CN 登录成功：${user.username}`,
-          );
+          if (user !== undefined) {
+            await vscode.window.showInformationMessage(
+              `LeetCode CN 登录成功：${user.username}`,
+            );
+          }
         }),
     }),
   );
