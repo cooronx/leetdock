@@ -107,12 +107,22 @@ export class ProblemPanelManager implements vscode.Disposable {
     return refreshed;
   }
 
-  public dispose(): void {
-    for (const entry of [...this.panels.values()]) {
-      entry.panel.dispose();
-    }
+  /** Closes every problem panel and forgets all account-scoped panel state. */
+  public closeAll(): void {
+    const entries = [...this.panels.values()];
     this.panels.clear();
     this.activeSlug = undefined;
+
+    for (const entry of entries) {
+      for (const subscription of entry.subscriptions) {
+        subscription.dispose();
+      }
+      entry.panel.dispose();
+    }
+  }
+
+  public dispose(): void {
+    this.closeAll();
   }
 
   private render(entry: PanelEntry): void {

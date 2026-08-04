@@ -53,7 +53,10 @@ export function activate(context: vscode.ExtensionContext): void {
     panels,
     explorer,
     vscode.window.registerTreeDataProvider("leetdock.explorer", explorer),
-    auth.registerUserDataCleanup(() => problemCache.clearUserData()),
+    auth.registerUserDataCleanup(async () => {
+      panels.closeAll();
+      await problemCache.clearUserData();
+    }),
     vscode.commands.registerCommand("leetdock.signIn", () =>
       runWithErrorMessage(() => auth.signIn()),
     ),
