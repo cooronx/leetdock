@@ -86,6 +86,16 @@ export class ProblemPanelManager implements vscode.Disposable {
     return this.panels.get(titleSlug)?.problem;
   }
 
+  public reveal(titleSlug: string): vscode.WebviewPanel | undefined {
+    const entry = this.panels.get(titleSlug);
+    if (entry === undefined) {
+      return undefined;
+    }
+    entry.panel.reveal(entry.panel.viewColumn, false);
+    this.activeSlug = titleSlug;
+    return entry.panel;
+  }
+
   public async refresh(titleSlug: string): Promise<ProblemDetail> {
     const entry = this.panels.get(titleSlug);
     if (entry === undefined) {

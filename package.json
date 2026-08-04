@@ -51,8 +51,42 @@
         "command": "leetdock.refreshProblem",
         "title": "Refresh Problem",
         "category": "LeetCode CN"
+      },
+      {
+        "command": "leetdock.openCode",
+        "title": "Open Code",
+        "category": "LeetCode CN"
+      },
+      {
+        "command": "leetdock.switchLanguage",
+        "title": "Switch Language",
+        "category": "LeetCode CN"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "LeetDock",
+      "properties": {
+        "leetdock.defaultLanguage": {
+          "type": "string",
+          "enum": [
+            "cpp",
+            "rust",
+            "python",
+            "java",
+            "typescript"
+          ],
+          "enumDescriptions": [
+            "C++",
+            "Rust",
+            "Python 3",
+            "Java",
+            "TypeScript"
+          ],
+          "description": "生成 LeetCode CN 代码文件时使用的默认语言。",
+          "scope": "window"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

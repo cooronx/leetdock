@@ -8,11 +8,14 @@ import {
 } from "./commands/problemCommands";
 import { LeetCodeClient } from "./leetcode/client";
 import { LeetCodeError, toUserMessage } from "./leetcode/errors";
+import type { ProblemDetail } from "./leetcode/types";
 import { ProblemCache } from "./problem/problemCache";
 import { ProblemService } from "./problem/problemService";
 import { CacheStorage } from "./storage/cacheStorage";
 import { CredentialStore } from "./storage/credentialStore";
 import { ProblemPanelManager } from "./webview/problemPanel";
+import { CodeFileService } from "./workspace/codeFileService";
+import { LanguageService } from "./workspace/languageService";
 
 export function activate(context: vscode.ExtensionContext): void {
   const credentials = new CredentialStore(context.secrets);
@@ -21,6 +24,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const auth = new AuthService(context, client, credentials, cache);
   const problemCache = new ProblemCache(cache);
   const problems = new ProblemService(client, problemCache);
+  const languages = new LanguageService();
+  const codeFiles = new CodeFileService(context, languages);
   const panels = new ProblemPanelManager(context.extensionUri, {
     openCode: async (problem, panel) => {
       panel.reveal(panel.viewColumn, false);
@@ -64,6 +69,37 @@ export function activate(context: vscode.ExtensionContext): void {
         withAuthExpiryHandling(auth, () => refreshProblemCommand(panels)),
       ),
     ),
+    vscode.commands.registerCommand("leetdock.openCode", (input?: unknown) =>
+      runWithErrorMessage(async () => {
+        const problem = commandProblem(input, panels);
+        if (problem === undefined) {
+          await vscode.window.showInformationMessage(
+            "请先打开一道 LeetCode CN 题目。",
+          );
+          return;
+        }
+        panels.reveal(problem.titleSlug);
+        await codeFiles.open(problem);
+      }),
+    ),
+    vscode.commands.registerCommand("leetdock.switchLanguage", (input?: unknown) =>
+      runWithErrorMessage(async () => {
+        const problem = commandProblem(input, panels);
+        if (problem === undefined) {
+          await vscode.window.showInformationMessage(
+            "请先打开一道 LeetCode CN 题目。",
+          );
+          return;
+        }
+        panels.reveal(problem.titleSlug);
+        const language = await languages.pickLanguage(
+          languages.getConfiguredLanguage(),
+        );
+        if (language !== undefined) {
+          await codeFiles.open(problem, language);
+        }
+      }),
+    ),
     vscode.window.registerUriHandler({
       handleUri: (uri) =>
         runWithErrorMessage(async () => {
@@ -105,4 +141,26 @@ async function withAuthExpiryHandling<T>(
     }
     throw error;
   }
+}
+
+function commandProblem(
+  input: unknown,
+  panels: ProblemPanelManager,
+): ProblemDetail | undefined {
+  if (isProblemDetail(input)) {
+    return input;
+  }
+  return panels.getActiveProblem();
+}
+
+function isProblemDetail(
+  value: unknown,
+): value is ProblemDetail {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "frontendId") === "string" &&
+    typeof Reflect.get(value, "titleSlug") === "string" &&
+    Array.isArray(Reflect.get(value, "codeSnippets"))
+  );
 }
