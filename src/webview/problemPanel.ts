@@ -40,7 +40,7 @@ export class ProblemPanelManager implements vscode.Disposable {
     if (existing !== undefined) {
       existing.problem = problem;
       this.render(existing);
-      existing.panel.reveal(undefined, false);
+      existing.panel.reveal(existing.panel.viewColumn, false);
       this.activeSlug = problem.titleSlug;
       return existing.panel;
     }
