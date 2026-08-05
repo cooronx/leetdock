@@ -187,8 +187,9 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
-    "check": "tsc --noEmit -p . && npm run check:extension-host",
+    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support",
     "check:extension-host": "node scripts/check-extension-host.cjs",
+    "check:solution-support": "node scripts/check-solution-support.cjs",
     "watch": "tsc --watch -p ."
   },
   "dependencies": {
