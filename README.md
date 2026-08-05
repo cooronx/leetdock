@@ -9,6 +9,7 @@ LeetDock 是一个通过 [leetcode.cn](https://leetcode.cn) 获取题目内容�
 - 每道题使用独立 Webview 页面；重复打开同一道题会复用原页面。
 - 中文题面优先、英文回退，支持标签、难度、状态、提示和 KaTeX 公式。
 - C++、Rust、Python、Java、TypeScript 本地代码文件。
+- 在 `solution.*` 编辑器中直接测试样例或提交代码，并在结果页查看判题详情。
 - Activity Bar 中显示当前账号、题目搜索和最近打开记录。
 - 题目列表、详情与搜索缓存，以及手动刷新和缓存清理。
 
@@ -18,6 +19,7 @@ LeetDock 是一个通过 [leetcode.cn](https://leetcode.cn) 获取题目内容�
 2. 在浏览器完成 LeetDock 授权，返回 VS Code 后核对弹窗中的账号并确认。
 3. 运行 `LeetDock: Open Problem`，输入例如 `1`、`两数之和`、`two-sum` 或完整题目 URL。
 4. 在题目页面点击“打开代码”。首次使用时选择默认语言和代码根目录。
+5. 在代码文件顶部点击“测试”或“提交”；测试支持题目默认样例和自定义多行输入。
 
 如果首次选择代码目录时取消，LeetDock 会使用并记住系统用户目录下的默认位置：
 
@@ -43,6 +45,7 @@ leetdock/
 - `Open Problem` / `Search Problem`
 - `Refresh Problem` / `Refresh Problem List`
 - `Open Code` / `Switch Language`
+- `Test Solution` / `Submit Solution`
 - `Clear Cache`
 
 `leetdock.defaultLanguage` 保存默认语言。`Clear Cache` 只清理题目缓存和最近记录，不会退出登录、修改默认语言、删除代码文件或重置代码目录。
@@ -75,3 +78,5 @@ code --extensionDevelopmentPath=.
 7. 重新启动 Extension Development Host，确认默认语言与代码根目录仍然有效。
 8. 检查 Activity Bar 的搜索与最近打开；分别执行单题刷新、题目列表刷新和缓存清理。
 9. 退出登录，确认凭证状态与用户名被清除，已打开的账号相关题目页面被关闭，但本地代码文件仍保留。
+10. 在 `solution.cpp` 顶部点击“测试”，分别验证默认样例与自定义输入，确认结果页展示输入、实际输出和预期输出。
+11. 修改但不保存代码后点击“提交”，确认文件被自动保存；提交结束后确认结果页和侧栏题目状态同步更新。
