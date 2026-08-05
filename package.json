@@ -26,6 +26,18 @@
     "workspace"
   ],
   "contributes": {
+    "colors": [
+      {
+        "id": "leetdock.streakFlame",
+        "description": "Color of the daily challenge streak flame.",
+        "defaults": {
+          "dark": "#FF7043",
+          "light": "#D84315",
+          "highContrast": "#FFAB91",
+          "highContrastLight": "#BF360C"
+        }
+      }
+    ],
     "commands": [
       {
         "command": "leetdock.signIn",

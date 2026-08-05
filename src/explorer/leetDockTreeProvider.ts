@@ -209,9 +209,7 @@ function dailyGroupItem(view: DailyViewState): vscode.TreeItem {
       item.description = dailyGroupDescription(view.state, offline);
       item.iconPath = new vscode.ThemeIcon(
         "flame",
-        new vscode.ThemeColor(
-          view.state.todayCompleted === true ? "charts.orange" : "descriptionForeground",
-        ),
+        new vscode.ThemeColor("leetdock.streakFlame"),
       );
       item.tooltip = dailyGroupTooltip(view.state, offline);
       break;

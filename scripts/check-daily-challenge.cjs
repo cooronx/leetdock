@@ -368,7 +368,17 @@ async function checkExplorerPresentation() {
   assert.equal(group.label, "连续 12 天");
   assert.equal(group.description, "今日已完成");
   assert.equal(group.iconPath.id, "flame");
-  assert.equal(group.iconPath.color.id, "charts.orange");
+  assert.equal(group.iconPath.color.id, "leetdock.streakFlame");
+
+  const streakColor = manifest.contributes.colors.find(
+    (color) => color.id === "leetdock.streakFlame",
+  );
+  assert.deepEqual(streakColor?.defaults, {
+    dark: "#FF7043",
+    light: "#D84315",
+    highContrast: "#FFAB91",
+    highContrastLight: "#BF360C",
+  });
 
   const children = await provider.getChildren(dailyNode);
   assert.deepEqual(children.map((node) => node.kind), ["daily-problem"]);
