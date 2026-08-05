@@ -4,6 +4,7 @@ import {
   normalizeLeetCodeCookie,
 } from "../storage/credentialStore";
 import { LeetCodeError } from "./errors";
+import { isJudgePending, mapJudgeResult } from "./judgeResult";
 import {
   CURRENT_USER_QUERY,
   PROBLEM_DETAIL_QUERY,
@@ -12,6 +13,8 @@ import {
 import type {
   CodeSnippet,
   Difficulty,
+  JudgeAction,
+  JudgeResult,
   ProblemDetail,
   ProblemSearchPage,
   ProblemStatus,
@@ -26,6 +29,9 @@ const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_MAX_CONCURRENCY = 2;
 const DEFAULT_MIN_INTERVAL_MS = 250;
+const DEFAULT_JUDGE_POLL_INTERVAL_MS = 1_000;
+const DEFAULT_JUDGE_TIMEOUT_MS = 60_000;
+const LEETCODE_ORIGIN = "https://leetcode.cn";
 
 interface GraphQLErrorPayload {
   readonly message?: unknown;
@@ -79,6 +85,7 @@ interface RawCodeSnippet {
 }
 
 interface RawProblemDetail {
+  readonly questionId?: unknown;
   readonly questionFrontendId?: unknown;
   readonly title?: unknown;
   readonly translatedTitle?: unknown;
@@ -122,6 +129,8 @@ interface ClientOptions {
   readonly maxConcurrency?: number;
   readonly minRequestIntervalMs?: number;
   readonly fetchImplementation?: typeof fetch;
+  readonly judgePollIntervalMs?: number;
+  readonly judgeTimeoutMs?: number;
 }
 
 interface RequestOptions {
@@ -180,6 +189,8 @@ export class LeetCodeClient {
   private readonly maxRetries: number;
   private readonly fetchImplementation: typeof fetch;
   private readonly requestGate: RequestGate;
+  private readonly judgePollIntervalMs: number;
+  private readonly judgeTimeoutMs: number;
 
   public constructor(
     private readonly credentials: CredentialStore,
@@ -206,6 +217,16 @@ export class LeetCodeClient {
         DEFAULT_MIN_INTERVAL_MS,
         "minRequestIntervalMs",
       ),
+    );
+    this.judgePollIntervalMs = nonNegativeFiniteNumber(
+      options.judgePollIntervalMs,
+      DEFAULT_JUDGE_POLL_INTERVAL_MS,
+      "judgePollIntervalMs",
+    );
+    this.judgeTimeoutMs = positiveFiniteNumber(
+      options.judgeTimeoutMs,
+      DEFAULT_JUDGE_TIMEOUT_MS,
+      "judgeTimeoutMs",
     );
   }
 
@@ -305,6 +326,54 @@ export class LeetCodeClient {
     return mapProblemDetail(data.question);
   }
 
+  public async testSolution(
+    problem: ProblemDetail,
+    languageSlug: string,
+    code: string,
+    input: string,
+  ): Promise<JudgeResult> {
+    const endpoint = problemEndpoint(problem.titleSlug, "interpret_solution");
+    const payload = await this.requestJsonRecord(
+      endpoint,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          lang: requiredRequestValue(languageSlug, "language"),
+          question_id: requiredRequestValue(problem.internalId, "question ID"),
+          typed_code: code,
+          data_input: input,
+        }),
+      },
+      false,
+      problemReferer(problem.titleSlug),
+    );
+    const taskId = requiredTaskId(payload.interpret_id, "interpret_id");
+    return this.pollJudgeResult("test", taskId, input);
+  }
+
+  public async submitSolution(
+    problem: ProblemDetail,
+    languageSlug: string,
+    code: string,
+  ): Promise<JudgeResult> {
+    const endpoint = problemEndpoint(problem.titleSlug, "submit");
+    const payload = await this.requestJsonRecord(
+      endpoint,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          lang: requiredRequestValue(languageSlug, "language"),
+          question_id: requiredRequestValue(problem.internalId, "question ID"),
+          typed_code: code,
+        }),
+      },
+      false,
+      problemReferer(problem.titleSlug),
+    );
+    const taskId = requiredTaskId(payload.submission_id, "submission_id");
+    return this.pollJudgeResult("submit", taskId);
+  }
+
   /**
    * Loads LeetCode's single-request public index for reliable frontend ID lookup.
    * GraphQL keyword search does not guarantee that an exact numeric ID is returned.
@@ -358,6 +427,81 @@ export class LeetCodeClient {
       }
       return this.fetchGraphQL<T>(operationName, query, variables, cookie, options);
     });
+  }
+
+  private async pollJudgeResult(
+    action: JudgeAction,
+    taskId: string,
+    input?: string,
+  ): Promise<JudgeResult> {
+    const deadline = Date.now() + this.judgeTimeoutMs;
+    while (Date.now() < deadline) {
+      const payload = await this.requestJsonRecord(
+        `${LEETCODE_ORIGIN}/submissions/detail/${encodeURIComponent(taskId)}/check/`,
+        { method: "GET" },
+        true,
+        LEETCODE_ORIGIN,
+      );
+      if (!isJudgePending(payload)) {
+        return mapJudgeResult(action, taskId, payload, input);
+      }
+      const remaining = deadline - Date.now();
+      if (remaining > 0) {
+        await delay(Math.min(this.judgePollIntervalMs, remaining));
+      }
+    }
+    throw new LeetCodeError("timeout", "Timed out while waiting for judge result.");
+  }
+
+  private async requestJsonRecord(
+    endpoint: string,
+    init: Pick<RequestInit, "body" | "method">,
+    retry: boolean,
+    referer: string,
+  ): Promise<Record<string, unknown>> {
+    const operation = async (): Promise<Record<string, unknown>> => {
+      const cookie = await this.credentials.getCookie();
+      if (cookie === undefined) {
+        throw new LeetCodeError("authentication", "Authentication is required.");
+      }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const response = await this.fetchImplementation(endpoint, {
+          ...init,
+          headers: buildHeaders(cookie, referer, endpoint),
+          redirect: "manual",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw httpError(response);
+        }
+        const rawBody = await response.text();
+        let payload: unknown;
+        try {
+          payload = JSON.parse(rawBody);
+        } catch (error) {
+          throw new LeetCodeError("invalid-response", "Response was not valid JSON.", {
+            cause: error,
+          });
+        }
+        if (!isRecord(payload)) {
+          throw new LeetCodeError("invalid-response", "Response was not an object.");
+        }
+        return payload;
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    if (retry) {
+      return this.runWithRetries(operation);
+    }
+    try {
+      return await this.requestGate.run(operation);
+    } catch (error) {
+      throw normalizeRequestError(error);
+    }
   }
 
   private async runWithRetries<T>(operation: () => Promise<T>): Promise<T> {
@@ -490,6 +634,13 @@ function httpError(response: Response): LeetCodeError {
   const retryAfter = response.headers.get("retry-after");
   const retryAfterMs = retryAfter === null ? undefined : parseRetryAfter(retryAfter);
 
+  if (response.status >= 300 && response.status < 400) {
+    return new LeetCodeError(
+      "authentication",
+      `Authentication redirect received (${response.status}).`,
+      { statusCode: response.status },
+    );
+  }
   if (response.status === 401) {
     return new LeetCodeError("authentication", `Authentication failed (${response.status}).`, {
       statusCode: response.status,
@@ -631,6 +782,34 @@ function mapProblemSummary(raw: RawProblemSummary): ProblemSummary {
   };
 }
 
+function problemEndpoint(titleSlug: string, action: string): string {
+  const slug = requiredRequestValue(titleSlug, "problem slug");
+  return `${LEETCODE_ORIGIN}/problems/${encodeURIComponent(slug)}/${action}/`;
+}
+
+function problemReferer(titleSlug: string): string {
+  return `${LEETCODE_ORIGIN}/problems/${encodeURIComponent(titleSlug)}/`;
+}
+
+function requiredRequestValue(value: string, field: string): string {
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new LeetCodeError("invalid-response", `Missing ${field}.`);
+  }
+  return normalized;
+}
+
+function requiredTaskId(value: unknown, field: string): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  const text = asString(value)?.trim();
+  if (text === undefined || text.length === 0) {
+    throw new LeetCodeError("invalid-response", `Missing ${field} in response.`);
+  }
+  return text;
+}
+
 function mapProblemDetail(raw: RawProblemDetail): ProblemDetail {
   const tags: ProblemTag[] = (raw.topicTags ?? []).map((tag) => ({
     name: requiredString(tag.name, "topicTags.name"),
@@ -646,6 +825,7 @@ function mapProblemDetail(raw: RawProblemDetail): ProblemDetail {
   }));
 
   return {
+    internalId: requiredString(raw.questionId, "questionId"),
     frontendId: requiredString(raw.questionFrontendId, "questionFrontendId"),
     title: requiredString(raw.title, "title"),
     ...(asString(raw.translatedTitle) === undefined

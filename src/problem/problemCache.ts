@@ -89,6 +89,11 @@ export class ProblemCache {
     if (detail === undefined) {
       return undefined;
     }
+    if (typeof detail.internalId !== "string" || detail.internalId.trim().length === 0) {
+      // Details cached by versions before judge support do not contain questionId.
+      await this.deleteDetail(detail.titleSlug);
+      return undefined;
+    }
     if (detail.paidOnly) {
       await this.deleteDetail(detail.titleSlug);
       return undefined;

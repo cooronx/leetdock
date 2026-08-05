@@ -19,6 +19,8 @@ export interface LanguageDefinition {
   readonly extension: string;
   /** Ordered LeetCode language slugs. The first matching snippet is used. */
   readonly snippetLanguageSlugs: readonly string[];
+  /** Canonical slug accepted by LeetCode's judge endpoints. */
+  readonly judgeLanguageSlug: string;
   readonly lineComment: "//" | "#";
 }
 
@@ -28,6 +30,7 @@ const LANGUAGE_DEFINITIONS: Readonly<Record<SupportedLanguage, LanguageDefinitio
     label: "C++",
     extension: ".cpp",
     snippetLanguageSlugs: ["cpp"],
+    judgeLanguageSlug: "cpp",
     lineComment: "//",
   },
   rust: {
@@ -35,6 +38,7 @@ const LANGUAGE_DEFINITIONS: Readonly<Record<SupportedLanguage, LanguageDefinitio
     label: "Rust",
     extension: ".rs",
     snippetLanguageSlugs: ["rust"],
+    judgeLanguageSlug: "rust",
     lineComment: "//",
   },
   python: {
@@ -42,6 +46,7 @@ const LANGUAGE_DEFINITIONS: Readonly<Record<SupportedLanguage, LanguageDefinitio
     label: "Python",
     extension: ".py",
     snippetLanguageSlugs: ["python3", "python"],
+    judgeLanguageSlug: "python3",
     lineComment: "#",
   },
   java: {
@@ -49,6 +54,7 @@ const LANGUAGE_DEFINITIONS: Readonly<Record<SupportedLanguage, LanguageDefinitio
     label: "Java",
     extension: ".java",
     snippetLanguageSlugs: ["java"],
+    judgeLanguageSlug: "java",
     lineComment: "//",
   },
   typescript: {
@@ -56,6 +62,7 @@ const LANGUAGE_DEFINITIONS: Readonly<Record<SupportedLanguage, LanguageDefinitio
     label: "TypeScript",
     extension: ".ts",
     snippetLanguageSlugs: ["typescript"],
+    judgeLanguageSlug: "typescript",
     lineComment: "//",
   },
 };

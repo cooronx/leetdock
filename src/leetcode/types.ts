@@ -32,6 +32,8 @@ export interface ProblemSummary {
 }
 
 export interface ProblemDetail extends ProblemSummary {
+  /** LeetCode's internal numeric ID, required by run and submit endpoints. */
+  readonly internalId: string;
   readonly content: string;
   readonly translatedContent?: string;
   readonly tags: readonly ProblemTag[];
@@ -39,6 +41,30 @@ export interface ProblemDetail extends ProblemSummary {
   readonly exampleTestcases?: string;
   readonly sampleTestCase?: string;
   readonly hints: readonly string[];
+}
+
+export type JudgeAction = "test" | "submit";
+
+export interface JudgeResult {
+  readonly action: JudgeAction;
+  readonly taskId: string;
+  readonly state: string;
+  readonly statusCode?: number;
+  readonly statusMessage: string;
+  readonly accepted: boolean;
+  readonly runSuccess: boolean;
+  readonly runtime?: string;
+  readonly memory?: string;
+  readonly compileError?: string;
+  readonly runtimeError?: string;
+  readonly input?: string;
+  readonly actualOutput?: string;
+  readonly expectedOutput?: string;
+  readonly standardOutput?: string;
+  readonly totalCorrect?: number;
+  readonly totalTestcases?: number;
+  readonly runtimePercentile?: number;
+  readonly memoryPercentile?: number;
 }
 
 export interface ProblemSearchPage {

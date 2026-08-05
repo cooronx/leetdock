@@ -38,6 +38,7 @@ export const PROBLEM_LIST_QUERY = /* GraphQL */ `
 export const PROBLEM_DETAIL_QUERY = /* GraphQL */ `
   query QuestionData($titleSlug: String!) {
     question(titleSlug: $titleSlug) {
+      questionId
       questionFrontendId
       title
       translatedTitle
