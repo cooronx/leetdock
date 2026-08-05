@@ -13,12 +13,14 @@ export interface DailyChallengeState {
   readonly streak?: DailyStreak;
   readonly streakSource?: DailyDataSource;
   readonly streakStatus: DailyStreakStatus;
+  readonly todayCompleted?: boolean;
   readonly warning?: unknown;
 }
 
 interface LoadRequest {
   readonly date: string;
   readonly generation: number;
+  readonly sequence: number;
   readonly signedIn: boolean;
 }
 
@@ -27,6 +29,7 @@ export class DailyChallengeService {
   private inFlight:
     | { readonly request: LoadRequest; readonly promise: Promise<DailyChallengeState> }
     | undefined;
+  private loadSequence = 0;
 
   public constructor(
     private readonly client: LeetCodeClient,
@@ -38,10 +41,24 @@ export class DailyChallengeService {
     return this.current;
   }
 
+  public markCompleted(titleSlug: string): boolean {
+    const current = this.current;
+    if (
+      current === undefined ||
+      current.challenge.problem.titleSlug !== titleSlug ||
+      current.todayCompleted === true
+    ) {
+      return false;
+    }
+    this.current = { ...current, todayCompleted: true };
+    return true;
+  }
+
   public load(signedIn: boolean, force = false): Promise<DailyChallengeState> {
     const request = {
       date: beijingDateKey(this.now()),
       generation: this.cache.captureUserDataGeneration(),
+      sequence: this.loadSequence + 1,
       signedIn,
     };
     const current = this.current;
@@ -52,9 +69,13 @@ export class DailyChallengeService {
     if (inFlight !== undefined && this.sameRequest(inFlight.request, request)) {
       return inFlight.promise;
     }
+    this.loadSequence = request.sequence;
 
     const promise = this.loadFresh(request).then((state) => {
-      if (!request.signedIn || this.cache.isUserDataGenerationCurrent(request.generation)) {
+      if (
+        request.sequence === this.loadSequence &&
+        (!request.signedIn || this.cache.isUserDataGenerationCurrent(request.generation))
+      ) {
         this.current = state;
       }
       return state;
@@ -68,6 +89,7 @@ export class DailyChallengeService {
   }
 
   public async clearUserData(): Promise<void> {
+    this.loadSequence += 1;
     await this.cache.clearUserData();
     if (this.current !== undefined) {
       this.current = {
@@ -80,6 +102,7 @@ export class DailyChallengeService {
   }
 
   public async clearAll(): Promise<void> {
+    this.loadSequence += 1;
     await this.cache.clearAll();
     this.current = undefined;
   }
@@ -153,6 +176,7 @@ export class DailyChallengeService {
       challengeSource,
       signedIn: true,
       ...(streak === undefined ? {} : { streak }),
+      ...(streak === undefined ? {} : { todayCompleted: streak.todayCompleted }),
       ...(streak === undefined
         ? {}
         : { streakSource: compatibleRemoteStreak === undefined ? "cache" as const : "network" as const }),

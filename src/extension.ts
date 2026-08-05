@@ -8,6 +8,8 @@ import {
   searchProblemCommand,
 } from "./commands/problemCommands";
 import { SolutionExecutionService } from "./commands/solutionCommands";
+import { DailyChallengeCache } from "./daily/dailyChallengeCache";
+import { DailyChallengeService } from "./daily/dailyChallengeService";
 import { LeetDockTreeProvider } from "./explorer/leetDockTreeProvider";
 import { LeetCodeClient } from "./leetcode/client";
 import { toUserMessage } from "./leetcode/errors";
@@ -29,7 +31,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const auth = new AuthService(context, client, credentials, cache);
   const problemCache = new ProblemCache(cache);
   const problems = new ProblemService(client, problemCache);
-  const explorer = new LeetDockTreeProvider(auth, problems);
+  const dailyCache = new DailyChallengeCache(cache);
+  const daily = new DailyChallengeService(client, dailyCache);
+  const explorer = new LeetDockTreeProvider(auth, problems, daily);
   const languages = new LanguageService();
   const codeFiles = new CodeFileService(context, languages);
   const panels = new ProblemPanelManager(context.extensionUri, {
@@ -60,9 +64,20 @@ export function activate(context: vscode.ExtensionContext): void {
       const refreshed = await problems.refreshProblem(problem.titleSlug);
       panels.update(refreshed);
       explorer.refresh();
+      if (explorer.isDailyChallenge(problem.titleSlug)) {
+        try {
+          await explorer.refreshDailyChallenge(true);
+        } catch {
+          // The accepted submission remains valid if daily metadata cannot refresh.
+        }
+        explorer.markDailyCompleted(problem.titleSlug);
+      }
     },
   );
   const solutionCodeLens = new SolutionCodeLensProvider(executions);
+  const treeView = vscode.window.createTreeView("leetdock.explorer", {
+    treeDataProvider: explorer,
+  });
 
   context.subscriptions.push(
     auth,
@@ -71,11 +86,19 @@ export function activate(context: vscode.ExtensionContext): void {
     executionPanels,
     executions,
     explorer,
-    vscode.window.registerTreeDataProvider("leetdock.explorer", explorer),
+    treeView,
+    treeView.onDidChangeVisibility(({ visible }) => {
+      if (visible) {
+        void explorer.refreshDailyChallenge(false).catch(() => undefined);
+      }
+    }),
     auth.registerUserDataCleanup(async () => {
       panels.closeAll();
       executions.reset();
-      await problemCache.clearUserData();
+      await Promise.all([
+        problemCache.clearUserData(),
+        daily.clearUserData(),
+      ]);
     }),
     vscode.languages.registerCodeLensProvider(
       ["cpp", "rust", "python", "java", "typescript"].map((language) => ({
@@ -117,17 +140,36 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("leetdock.refreshProblemList", () =>
       runWithErrorMessage(async () => {
         await withAuthExpiryHandling(auth, async () => {
-          await vscode.window.withProgress(
+          const dailyState = await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Window,
-              title: "LeetDock 正在刷新题目列表…",
+              title: "LeetDock 正在刷新题目与每日挑战…",
               cancellable: false,
             },
-            () => problems.refreshProblemList(),
+            async () => {
+              const [, state] = await Promise.all([
+                problems.refreshProblemList(),
+                explorer.refreshDailyChallenge(true),
+              ]);
+              return state;
+            },
           );
+          if (dailyState.warning !== undefined) {
+            throw dailyState.warning;
+          }
         });
         explorer.refresh();
-        await vscode.window.showInformationMessage("LeetDock 题目列表已刷新。");
+        await vscode.window.showInformationMessage("LeetDock 题目列表和每日挑战已刷新。");
+      }),
+    ),
+    vscode.commands.registerCommand("leetdock.refreshDailyChallenge", () =>
+      runWithErrorMessage(async () => {
+        await withAuthExpiryHandling(auth, async () => {
+          const state = await explorer.refreshDailyChallenge(true);
+          if (state.warning !== undefined) {
+            throw state.warning;
+          }
+        });
       }),
     ),
     vscode.commands.registerCommand("leetdock.clearCache", () =>
@@ -140,8 +182,11 @@ export function activate(context: vscode.ExtensionContext): void {
         if (confirmed !== "清除") {
           return;
         }
-        await problems.clearCache();
-        explorer.refresh();
+        await Promise.all([
+          problems.clearCache(),
+          daily.clearAll(),
+        ]);
+        explorer.resetDailyChallenge();
         await vscode.window.showInformationMessage("LeetDock 缓存已清除。");
       }),
     ),

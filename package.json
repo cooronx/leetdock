@@ -82,6 +82,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "leetdock.refreshDailyChallenge",
+        "title": "Refresh Daily Challenge",
+        "category": "LeetDock"
+      },
+      {
         "command": "leetdock.clearCache",
         "title": "Clear Cache",
         "category": "LeetDock",

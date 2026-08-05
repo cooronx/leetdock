@@ -2,9 +2,40 @@ const assert = require("node:assert/strict");
 const Module = require("node:module");
 
 const originalLoad = Module._load;
+class EventEmitter {
+  constructor() {
+    this.event = () => ({ dispose() {} });
+  }
+  fire() {}
+  dispose() {}
+}
+class TreeItem {
+  constructor(label, collapsibleState) {
+    this.label = label;
+    this.collapsibleState = collapsibleState;
+  }
+}
+class ThemeIcon {
+  constructor(id, color) {
+    this.id = id;
+    this.color = color;
+  }
+}
+class ThemeColor {
+  constructor(id) {
+    this.id = id;
+  }
+}
+const vscodeStub = {
+  EventEmitter,
+  TreeItem,
+  ThemeIcon,
+  ThemeColor,
+  TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+};
 Module._load = function loadWithVscodeStub(request, parent, isMain) {
   if (request === "vscode") {
-    return {};
+    return vscodeStub;
   }
   return originalLoad.call(this, request, parent, isMain);
 };
@@ -19,6 +50,10 @@ const {
   DailyChallengeService,
   beijingDateKey,
 } = require("../dist/daily/dailyChallengeService.js");
+const {
+  LeetDockTreeProvider,
+} = require("../dist/explorer/leetDockTreeProvider.js");
+const manifest = require("../package.json");
 
 class Memento {
   constructor() {
@@ -180,6 +215,20 @@ async function checkDailyStateAndOfflineFallback() {
   assert.equal(fresh.streakStatus, "available");
   assert.equal(fresh.streak.streakCount, 12);
   assert.equal(challengeRequests, 1);
+
+  assert.equal(service.markCompleted(dailyChallenge.problem.titleSlug), false);
+  const incompleteService = new DailyChallengeService(
+    {
+      getDailyChallenge: async () => dailyChallenge,
+      getDailyStreak: async () => ({ ...dailyStreak, todayCompleted: false }),
+    },
+    new DailyChallengeCache(new CacheStorage(new Memento())),
+    () => new Date("2026-08-05T08:00:00.000Z"),
+  );
+  await incompleteService.load(true);
+  assert.equal(incompleteService.markCompleted(dailyChallenge.problem.titleSlug), true);
+  assert.equal(incompleteService.snapshot.todayCompleted, true);
+  assert.equal(incompleteService.snapshot.streak.streakCount, 12);
   assert.equal(streakRequests, 1);
   assert.equal((await cache.getChallenge("2026-08-05")).problem.status, null);
 
@@ -272,12 +321,174 @@ function checkBeijingDateBoundary() {
   assert.throws(() => beijingDateKey(new Date(Number.NaN)), RangeError);
 }
 
+async function checkExplorerPresentation() {
+  const readyState = {
+    challenge: dailyChallenge,
+    challengeSource: "network",
+    signedIn: true,
+    streak: dailyStreak,
+    streakSource: "network",
+    streakStatus: "available",
+    todayCompleted: true,
+  };
+  const daily = {
+    snapshot: readyState,
+    load: async () => readyState,
+    markCompleted: () => false,
+  };
+  const provider = new LeetDockTreeProvider(
+    {
+      snapshot: {
+        status: "signed-in",
+        user: { isSignedIn: true, username: "leet", isPremium: false },
+      },
+      onDidChange: () => ({ dispose() {} }),
+    },
+    { getRecent: async () => [] },
+    daily,
+  );
+
+  await provider.refreshDailyChallenge(true);
+  const root = await provider.getChildren();
+  assert.deepEqual(root.map((node) => node.kind), ["account", "daily", "search", "recent"]);
+  const dailyNode = root.find((node) => node.kind === "daily");
+  const group = provider.getTreeItem(dailyNode);
+  assert.equal(group.label, "连续 12 天");
+  assert.equal(group.description, "今日已完成");
+  assert.equal(group.iconPath.id, "flame");
+  assert.equal(group.iconPath.color.id, "charts.orange");
+
+  const children = await provider.getChildren(dailyNode);
+  assert.deepEqual(children.map((node) => node.kind), ["daily-problem"]);
+  const problem = provider.getTreeItem(children[0]);
+  assert.equal(problem.label, "3310. 移除可疑的方法");
+  assert.equal(problem.description, "中等 · 已完成");
+  assert.equal(problem.command.command, "leetdock.openProblem");
+  assert.deepEqual(problem.command.arguments, ["remove-methods-from-project"]);
+  assert.equal(provider.isDailyChallenge("remove-methods-from-project"), true);
+  assert.equal(provider.isDailyChallenge("two-sum"), false);
+  provider.dispose();
+
+  const signedOutState = {
+    challenge: { ...dailyChallenge, problem: { ...dailyChallenge.problem, status: null } },
+    challengeSource: "cache",
+    signedIn: false,
+    streakStatus: "signed-out",
+    warning: new LeetCodeError("network", "offline"),
+  };
+  const signedOutProvider = new LeetDockTreeProvider(
+    {
+      snapshot: { status: "signed-out" },
+      onDidChange: () => ({ dispose() {} }),
+    },
+    { getRecent: async () => [] },
+    {
+      snapshot: signedOutState,
+      load: async () => signedOutState,
+      markCompleted: () => false,
+    },
+  );
+  await signedOutProvider.refreshDailyChallenge(true);
+  const signedOutRoot = await signedOutProvider.getChildren();
+  const signedOutDaily = signedOutRoot.find((node) => node.kind === "daily");
+  const signedOutGroup = signedOutProvider.getTreeItem(signedOutDaily);
+  assert.equal(signedOutGroup.label, "今日挑战");
+  assert.equal(signedOutGroup.description, "登录后查看 streak · 离线数据");
+  const signedOutChildren = await signedOutProvider.getChildren(signedOutDaily);
+  assert.deepEqual(
+    signedOutChildren.map((node) => node.kind),
+    ["daily-problem", "daily-sign-in"],
+  );
+  assert.equal(
+    signedOutProvider.getTreeItem(signedOutChildren[1]).command.command,
+    "leetdock.signIn",
+  );
+  signedOutProvider.dispose();
+
+  const failingProvider = new LeetDockTreeProvider(
+    {
+      snapshot: { status: "signed-out" },
+      onDidChange: () => ({ dispose() {} }),
+    },
+    { getRecent: async () => [] },
+    {
+      load: async () => {
+        throw new LeetCodeError("network", "offline");
+      },
+      markCompleted: () => false,
+    },
+  );
+  await assert.rejects(failingProvider.refreshDailyChallenge(true));
+  const failedRoot = await failingProvider.getChildren();
+  const failedDaily = failedRoot.find((node) => node.kind === "daily");
+  const failedChildren = await failingProvider.getChildren(failedDaily);
+  assert.equal(
+    failingProvider.getTreeItem(failedChildren[0]).command.command,
+    "leetdock.refreshDailyChallenge",
+  );
+  failingProvider.dispose();
+
+  const commandIds = new Set(manifest.contributes.commands.map((command) => command.command));
+  assert.equal(commandIds.has("leetdock.refreshDailyChallenge"), true);
+}
+
+async function checkNewestExplorerLoadWins() {
+  let resolveFirst;
+  const first = new Promise((resolve) => {
+    resolveFirst = resolve;
+  });
+  const newerState = {
+    challenge: dailyChallenge,
+    challengeSource: "network",
+    signedIn: true,
+    streak: { ...dailyStreak, streakCount: 20, todayCompleted: false },
+    streakSource: "network",
+    streakStatus: "available",
+    todayCompleted: false,
+  };
+  let calls = 0;
+  const provider = new LeetDockTreeProvider(
+    {
+      snapshot: {
+        status: "signed-in",
+        user: { isSignedIn: true, username: "leet", isPremium: false },
+      },
+      onDidChange: () => ({ dispose() {} }),
+    },
+    { getRecent: async () => [] },
+    {
+      snapshot: newerState,
+      load: async () => {
+        calls += 1;
+        return calls === 1 ? first : newerState;
+      },
+      markCompleted: () => false,
+    },
+  );
+
+  const olderLoad = provider.refreshDailyChallenge(true);
+  await new Promise((resolve) => setImmediate(resolve));
+  await provider.refreshDailyChallenge(true);
+  resolveFirst({
+    ...newerState,
+    streak: { ...dailyStreak, streakCount: 1 },
+  });
+  await olderLoad;
+
+  const root = await provider.getChildren();
+  const group = provider.getTreeItem(root.find((node) => node.kind === "daily"));
+  assert.equal(group.label, "连续 20 天");
+  provider.dispose();
+}
+
 Promise.all([
   checkDailyChallengeRequests(),
   checkDailyStreakRequiresAuthentication(),
   checkDailyStateAndOfflineFallback(),
   checkAccountBoundary(),
   checkSignOutDuringRequest(),
+  checkExplorerPresentation(),
+  checkNewestExplorerLoadWins(),
 ]).then(
   () => console.log("LeetDock daily challenge API checks passed."),
   (error) => {
