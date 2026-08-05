@@ -7,11 +7,15 @@ import { LeetCodeError } from "./errors";
 import { isJudgePending, mapJudgeResult } from "./judgeResult";
 import {
   CURRENT_USER_QUERY,
+  DAILY_CHALLENGE_QUERY,
+  DAILY_STREAK_QUERY,
   PROBLEM_DETAIL_QUERY,
   PROBLEM_LIST_QUERY,
 } from "./graphql";
 import type {
   CodeSnippet,
+  DailyChallenge,
+  DailyStreak,
   Difficulty,
   JudgeAction,
   JudgeResult,
@@ -24,6 +28,7 @@ import type {
 } from "./types";
 
 const DEFAULT_ENDPOINT = "https://leetcode.cn/graphql/";
+const DEFAULT_STREAK_ENDPOINT = "https://leetcode.cn/graphql/noj-go/";
 const DEFAULT_PROBLEM_INDEX_ENDPOINT = "https://leetcode.cn/api/problems/all/";
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_RETRIES = 2;
@@ -106,6 +111,22 @@ interface ProblemDetailData {
   readonly question?: RawProblemDetail | null;
 }
 
+interface DailyChallengeData {
+  readonly todayRecord?: readonly {
+    readonly date?: unknown;
+    readonly question?: RawProblemSummary | null;
+  }[] | null;
+}
+
+interface DailyStreakData {
+  readonly problemsetStreakCounter?: {
+    readonly today?: unknown;
+    readonly streakCount?: unknown;
+    readonly daysSkipped?: unknown;
+    readonly todayCompleted?: unknown;
+  } | null;
+}
+
 interface RawProblemIndexEntry {
   readonly stat?: {
     readonly frontend_question_id?: unknown;
@@ -123,6 +144,7 @@ interface ProblemIndexData {
 
 interface ClientOptions {
   readonly endpoint?: string;
+  readonly streakEndpoint?: string;
   readonly problemIndexEndpoint?: string;
   readonly timeoutMs?: number;
   readonly maxRetries?: number;
@@ -137,6 +159,7 @@ interface RequestOptions {
   readonly requiresAuthentication?: boolean;
   readonly referer?: string;
   readonly cookieOverride?: string;
+  readonly endpoint?: string;
 }
 
 class RequestGate {
@@ -184,6 +207,7 @@ class RequestGate {
 
 export class LeetCodeClient {
   private readonly endpoint: string;
+  private readonly streakEndpoint: string;
   private readonly problemIndexEndpoint: string;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
@@ -197,6 +221,7 @@ export class LeetCodeClient {
     options: ClientOptions = {},
   ) {
     this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
+    this.streakEndpoint = options.streakEndpoint ?? DEFAULT_STREAK_ENDPOINT;
     this.problemIndexEndpoint =
       options.problemIndexEndpoint ?? DEFAULT_PROBLEM_INDEX_ENDPOINT;
     this.timeoutMs = positiveFiniteNumber(options.timeoutMs, DEFAULT_TIMEOUT_MS, "timeoutMs");
@@ -324,6 +349,55 @@ export class LeetCodeClient {
     }
 
     return mapProblemDetail(data.question);
+  }
+
+  public async getDailyChallenge(): Promise<DailyChallenge> {
+    const data = await this.request<DailyChallengeData>(
+      "DailyChallenge",
+      DAILY_CHALLENGE_QUERY,
+      {},
+      { referer: "https://leetcode.cn/" },
+    );
+    const record = data.todayRecord?.[0];
+    if (record?.question === null || record?.question === undefined) {
+      throw new LeetCodeError("invalid-response", "Missing today's daily challenge.");
+    }
+    return {
+      date: requiredDate(record.date, "todayRecord.date"),
+      problem: mapProblemSummary(record.question),
+    };
+  }
+
+  public async getDailyStreak(): Promise<DailyStreak> {
+    const data = await this.request<DailyStreakData>(
+      "DailyStreak",
+      DAILY_STREAK_QUERY,
+      {},
+      {
+        endpoint: this.streakEndpoint,
+        referer: "https://leetcode.cn/problemset/",
+        requiresAuthentication: true,
+      },
+    );
+    const streak = data.problemsetStreakCounter;
+    if (streak === null || streak === undefined) {
+      throw new LeetCodeError("invalid-response", "Missing daily challenge streak.");
+    }
+    return {
+      today: requiredDate(streak.today, "problemsetStreakCounter.today"),
+      streakCount: requiredNonNegativeInteger(
+        streak.streakCount,
+        "problemsetStreakCounter.streakCount",
+      ),
+      daysSkipped: requiredNonNegativeInteger(
+        streak.daysSkipped,
+        "problemsetStreakCounter.daysSkipped",
+      ),
+      todayCompleted: requiredBoolean(
+        streak.todayCompleted,
+        "problemsetStreakCounter.todayCompleted",
+      ),
+    };
   }
 
   public async testSolution(
@@ -530,13 +604,14 @@ export class LeetCodeClient {
     cookie: string | undefined,
     options: RequestOptions,
   ): Promise<T> {
+    const endpoint = options.endpoint ?? this.endpoint;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await this.fetchImplementation(this.endpoint, {
+      const response = await this.fetchImplementation(endpoint, {
         method: "POST",
-        headers: buildHeaders(cookie, options.referer, this.endpoint),
+        headers: buildHeaders(cookie, options.referer, endpoint),
         body: JSON.stringify({ operationName, query, variables }),
         redirect: "error",
         signal: controller.signal,
@@ -912,6 +987,28 @@ function requiredString(value: unknown, field: string, allowEmpty = false): stri
     throw new LeetCodeError("invalid-response", `Missing ${field} in response.`);
   }
   return result;
+}
+
+function requiredDate(value: unknown, field: string): string {
+  const date = requiredString(value, field);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new LeetCodeError("invalid-response", `Invalid ${field} in response.`);
+  }
+  return date;
+}
+
+function requiredNonNegativeInteger(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new LeetCodeError("invalid-response", `Invalid ${field} in response.`);
+  }
+  return value;
+}
+
+function requiredBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new LeetCodeError("invalid-response", `Invalid ${field} in response.`);
+  }
+  return value;
 }
 
 function asString(value: unknown): string | undefined {

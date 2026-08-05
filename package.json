@@ -187,9 +187,10 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
-    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support",
+    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:daily-challenge",
     "check:extension-host": "node scripts/check-extension-host.cjs",
     "check:solution-support": "node scripts/check-solution-support.cjs",
+    "check:daily-challenge": "node scripts/check-daily-challenge.cjs",
     "watch": "tsc --watch -p ."
   },
   "dependencies": {

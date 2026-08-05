@@ -64,3 +64,31 @@ export const PROBLEM_DETAIL_QUERY = /* GraphQL */ `
     }
   }
 `;
+
+export const DAILY_CHALLENGE_QUERY = /* GraphQL */ `
+  query DailyChallenge {
+    todayRecord {
+      date
+      question {
+        frontendQuestionId
+        title
+        titleCn: translatedTitle
+        titleSlug
+        difficulty
+        paidOnly: isPaidOnly
+        status
+      }
+    }
+  }
+`;
+
+export const DAILY_STREAK_QUERY = /* GraphQL */ `
+  query DailyStreak {
+    problemsetStreakCounter {
+      today
+      streakCount
+      daysSkipped
+      todayCompleted
+    }
+  }
+`;

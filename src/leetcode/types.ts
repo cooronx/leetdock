@@ -72,3 +72,15 @@ export interface ProblemSearchPage {
   readonly total: number;
   readonly hasMore: boolean;
 }
+
+export interface DailyChallenge {
+  readonly date: string;
+  readonly problem: ProblemSummary;
+}
+
+export interface DailyStreak {
+  readonly today: string;
+  readonly streakCount: number;
+  readonly daysSkipped: number;
+  readonly todayCompleted: boolean;
+}
