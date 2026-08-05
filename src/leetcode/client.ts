@@ -992,10 +992,13 @@ function requiredString(value: unknown, field: string, allowEmpty = false): stri
 
 function requiredDate(value: unknown, field: string): string {
   const date = requiredString(value, field);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/
+    .exec(date);
+  const normalizedDate = match?.[1];
+  if (normalizedDate === undefined) {
     throw new LeetCodeError("invalid-response", `Invalid ${field} in response.`);
   }
-  return date;
+  return normalizedDate;
 }
 
 function requiredNonNegativeInteger(value: unknown, field: string): number {

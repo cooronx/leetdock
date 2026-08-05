@@ -118,7 +118,7 @@ async function checkDailyChallengeRequests() {
     {
       data: {
         problemsetStreakCounter: {
-          today: "2026-08-05",
+          today: "2026-08-05T14:40:00.306390111+08:00",
           streakCount: 12,
           daysSkipped: 0,
           todayCompleted: true,
