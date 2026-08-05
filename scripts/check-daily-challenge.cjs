@@ -41,6 +41,9 @@ Module._load = function loadWithVscodeStub(request, parent, isMain) {
 };
 
 const { LeetCodeClient } = require("../dist/leetcode/client.js");
+const {
+  PROBLEM_LIST_QUERY,
+} = require("../dist/leetcode/graphql.js");
 const { LeetCodeError } = require("../dist/leetcode/errors.js");
 const { CacheStorage } = require("../dist/storage/cacheStorage.js");
 const {
@@ -153,7 +156,15 @@ async function checkDailyChallengeRequests() {
     },
   });
   assert.equal(requests[0].url, "https://leetcode.cn/graphql/");
-  assert.equal(JSON.parse(requests[0].init.body).operationName, "DailyChallenge");
+  const dailyRequestBody = JSON.parse(requests[0].init.body);
+  assert.equal(dailyRequestBody.operationName, "DailyChallenge");
+  assert.match(
+    dailyRequestBody.query,
+    /frontendQuestionId\s*:\s*questionFrontendId/,
+    "todayRecord must alias QuestionNode's field to the shared problem shape",
+  );
+  assert.match(PROBLEM_LIST_QUERY, /\n\s+frontendQuestionId\n/);
+  assert.doesNotMatch(PROBLEM_LIST_QUERY, /\n\s+questionFrontendId\n/);
 
   assert.deepEqual(await client.getDailyStreak(), {
     today: "2026-08-05",
@@ -165,6 +176,7 @@ async function checkDailyChallengeRequests() {
   assert.equal(JSON.parse(requests[1].init.body).operationName, "DailyStreak");
   assert.equal(requests[1].init.headers.Cookie, "LEETCODE_SESSION=session; csrftoken=csrf-token");
   assert.equal(requests[1].init.headers["X-CSRFToken"], "csrf-token");
+  assert.equal(requests[1].init.headers["X-Requested-With"], "XMLHttpRequest");
   assert.equal(responses.length, 0);
 }
 

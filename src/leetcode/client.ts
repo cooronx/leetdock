@@ -670,6 +670,7 @@ function buildHeaders(
     Origin: "https://leetcode.cn",
     Referer: referer ?? "https://leetcode.cn/",
     "User-Agent": "LeetDock VS Code Extension",
+    "X-Requested-With": "XMLHttpRequest",
   };
 
   if (cookie !== undefined && isTrustedLeetCodeEndpoint(endpoint)) {

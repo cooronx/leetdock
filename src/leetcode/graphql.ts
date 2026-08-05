@@ -70,7 +70,7 @@ export const DAILY_CHALLENGE_QUERY = /* GraphQL */ `
     todayRecord {
       date
       question {
-        frontendQuestionId
+        frontendQuestionId: questionFrontendId
         title
         titleCn: translatedTitle
         titleSlug
