@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { withAuthExpiryHandling } from "./auth/authExpiry";
 import { AuthService } from "./auth/authService";
 import { AuthStatusBar } from "./auth/authStatusBar";
 import {
@@ -6,17 +7,20 @@ import {
   refreshProblemCommand,
   searchProblemCommand,
 } from "./commands/problemCommands";
+import { SolutionExecutionService } from "./commands/solutionCommands";
 import { LeetDockTreeProvider } from "./explorer/leetDockTreeProvider";
 import { LeetCodeClient } from "./leetcode/client";
-import { LeetCodeError, toUserMessage } from "./leetcode/errors";
+import { toUserMessage } from "./leetcode/errors";
 import type { ProblemDetail } from "./leetcode/types";
 import { ProblemCache } from "./problem/problemCache";
 import { ProblemService } from "./problem/problemService";
 import { CacheStorage } from "./storage/cacheStorage";
 import { CredentialStore } from "./storage/credentialStore";
 import { ProblemPanelManager } from "./webview/problemPanel";
+import { ExecutionPanelManager } from "./webview/executionPanel";
 import { CodeFileService } from "./workspace/codeFileService";
 import { LanguageService } from "./workspace/languageService";
+import { SolutionCodeLensProvider } from "./workspace/solutionCodeLensProvider";
 
 export function activate(context: vscode.ExtensionContext): void {
   const credentials = new CredentialStore(context.secrets);
@@ -46,17 +50,39 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   });
   const statusBar = new AuthStatusBar(auth);
+  const executionPanels = new ExecutionPanelManager(context.extensionUri);
+  const executions = new SolutionExecutionService(
+    client,
+    auth,
+    problems,
+    executionPanels,
+    async (problem) => {
+      const refreshed = await problems.refreshProblem(problem.titleSlug);
+      panels.update(refreshed);
+      explorer.refresh();
+    },
+  );
+  const solutionCodeLens = new SolutionCodeLensProvider(executions);
 
   context.subscriptions.push(
     auth,
     statusBar,
     panels,
+    executionPanels,
+    executions,
     explorer,
     vscode.window.registerTreeDataProvider("leetdock.explorer", explorer),
     auth.registerUserDataCleanup(async () => {
       panels.closeAll();
+      executions.reset();
       await problemCache.clearUserData();
     }),
+    vscode.languages.registerCodeLensProvider(
+      ["cpp", "rust", "python", "java", "typescript"].map((language) => ({
+        language,
+      })),
+      solutionCodeLens,
+    ),
     vscode.commands.registerCommand("leetdock.signIn", () =>
       runWithErrorMessage(() => auth.signIn()),
     ),
@@ -150,6 +176,17 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       }),
     ),
+    vscode.commands.registerCommand("leetdock.testSolution", (input?: unknown) =>
+      runWithErrorMessage(() => executions.test(input)),
+    ),
+    vscode.commands.registerCommand("leetdock.submitSolution", (input?: unknown) =>
+      runWithErrorMessage(() => executions.submit(input)),
+    ),
+    vscode.commands.registerCommand("leetdock.solutionBusy", () =>
+      vscode.window.showInformationMessage(
+        "该文件已有判题任务正在运行，请等待当前任务完成。",
+      ),
+    ),
     vscode.window.registerUriHandler({
       handleUri: (uri) =>
         runWithErrorMessage(async () => {
@@ -181,32 +218,6 @@ async function runWithErrorMessage(operation: () => Promise<void>): Promise<void
   }
 }
 
-async function withAuthExpiryHandling<T>(
-  auth: AuthService,
-  operation: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await operation();
-  } catch (error) {
-    if (error instanceof LeetCodeError && error.kind === "authentication") {
-      const validation = await auth.revalidateAuthentication();
-      if (validation === "valid") {
-        throw new LeetCodeError(
-          "authorization",
-          "LeetDock rejected the request while the session remained valid.",
-        );
-      }
-      if (validation === "unavailable") {
-        throw new LeetCodeError(
-          "service",
-          "Could not verify whether the LeetDock session expired.",
-        );
-      }
-    }
-    throw error;
-  }
-}
-
 function commandProblem(
   input: unknown,
   panels: ProblemPanelManager,
@@ -223,6 +234,7 @@ function isProblemDetail(
   return (
     typeof value === "object" &&
     value !== null &&
+    typeof Reflect.get(value, "internalId") === "string" &&
     typeof Reflect.get(value, "frontendId") === "string" &&
     typeof Reflect.get(value, "titleSlug") === "string" &&
     Array.isArray(Reflect.get(value, "codeSnippets"))

@@ -64,6 +64,18 @@
         "category": "LeetDock"
       },
       {
+        "command": "leetdock.testSolution",
+        "title": "Test Solution",
+        "category": "LeetDock",
+        "enablement": "resourceFilename =~ /^solution\\.(cpp|rs|py|java|ts)$/"
+      },
+      {
+        "command": "leetdock.submitSolution",
+        "title": "Submit Solution",
+        "category": "LeetDock",
+        "enablement": "resourceFilename =~ /^solution\\.(cpp|rs|py|java|ts)$/"
+      },
+      {
         "command": "leetdock.refreshProblemList",
         "title": "Refresh Problem List",
         "category": "LeetDock",
@@ -110,8 +122,43 @@
           "when": "view == leetdock.explorer",
           "group": "navigation@3"
         }
+      ],
+      "explorer/context": [
+        {
+          "command": "leetdock.testSolution",
+          "when": "resourceFilename =~ /^solution\\.(cpp|rs|py|java|ts)$/",
+          "group": "leetdock@1"
+        },
+        {
+          "command": "leetdock.submitSolution",
+          "when": "resourceFilename =~ /^solution\\.(cpp|rs|py|java|ts)$/",
+          "group": "leetdock@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "submenu": "leetdock.solutionActions",
+          "when": "resourceFilename =~ /^solution\\.(cpp|rs|py|java|ts)$/",
+          "group": "navigation@10"
+        }
+      ],
+      "leetdock.solutionActions": [
+        {
+          "command": "leetdock.testSolution",
+          "group": "leetdock@1"
+        },
+        {
+          "command": "leetdock.submitSolution",
+          "group": "leetdock@2"
+        }
       ]
     },
+    "submenus": [
+      {
+        "id": "leetdock.solutionActions",
+        "label": "LeetDock"
+      }
+    ],
     "configuration": {
       "title": "LeetDock",
       "properties": {
