@@ -9,7 +9,11 @@ import {
   CURRENT_USER_QUERY,
   DAILY_CHALLENGE_QUERY,
   DAILY_STREAK_QUERY,
+  MY_PROBLEM_LISTS_QUERY,
   PROBLEM_DETAIL_QUERY,
+  PROBLEM_LIST_PROGRESS_QUERY,
+  PROBLEM_LIST_QUESTIONS_QUERY,
+  PROBLEM_LIST_QUESTION_STATUS_QUERY,
   PROBLEM_LIST_QUERY,
 } from "./graphql";
 import type {
@@ -20,6 +24,11 @@ import type {
   JudgeAction,
   JudgeResult,
   ProblemDetail,
+  ProblemListPage,
+  ProblemListProgress,
+  ProblemListQuestion,
+  ProblemListSource,
+  ProblemListSummary,
   ProblemSearchPage,
   ProblemStatus,
   ProblemSummary,
@@ -140,6 +149,56 @@ interface RawProblemIndexEntry {
 
 interface ProblemIndexData {
   readonly stat_status_pairs?: readonly RawProblemIndexEntry[] | null;
+}
+
+interface RawFavoriteSummary {
+  readonly name?: unknown;
+  readonly slug?: unknown;
+  readonly favoriteType?: unknown;
+}
+
+interface RawFavoriteCollection {
+  readonly favorites?: readonly RawFavoriteSummary[] | null;
+}
+
+interface MyProblemListsData {
+  readonly myCreatedFavoriteList?: RawFavoriteCollection | null;
+  readonly myCollectedFavoriteList?: RawFavoriteCollection | null;
+}
+
+interface FavoriteQuestionListData {
+  readonly favoriteQuestionList?: {
+    readonly questions?: readonly RawFavoriteQuestion[] | null;
+    readonly totalLength?: unknown;
+    readonly hasMore?: unknown;
+  } | null;
+}
+
+interface RawFavoriteQuestion {
+  readonly questionFrontendId?: unknown;
+  readonly title?: unknown;
+  readonly translatedTitle?: unknown;
+  readonly titleSlug?: unknown;
+  readonly difficulty?: unknown;
+  readonly paidOnly?: unknown;
+  readonly status?: unknown;
+}
+
+interface RawProgressCount {
+  readonly count?: unknown;
+  readonly difficulty?: unknown;
+}
+
+interface FavoriteProgressData {
+  readonly favoriteUserQuestionProgressV2?: {
+    readonly numAcceptedQuestions?: readonly RawProgressCount[] | null;
+    readonly numFailedQuestions?: readonly RawProgressCount[] | null;
+    readonly numUntouchedQuestions?: readonly RawProgressCount[] | null;
+  } | null;
+}
+
+interface FavoriteQuestionStatusData {
+  readonly favoriteQuestionAcStatus?: unknown;
 }
 
 interface ClientOptions {
@@ -398,6 +457,121 @@ export class LeetCodeClient {
         "problemsetStreakCounter.todayCompleted",
       ),
     };
+  }
+
+  public async getMyProblemLists(): Promise<readonly ProblemListSummary[]> {
+    const data = await this.request<MyProblemListsData>(
+      "MyFavoriteLists",
+      MY_PROBLEM_LISTS_QUERY,
+      {},
+      {
+        referer: "https://leetcode.cn/problemset/",
+        requiresAuthentication: true,
+      },
+    );
+    const created = mapProblemListCollection(
+      data.myCreatedFavoriteList,
+      "created",
+      "myCreatedFavoriteList",
+    );
+    const collected = mapProblemListCollection(
+      data.myCollectedFavoriteList,
+      "collected",
+      "myCollectedFavoriteList",
+    );
+    const seen = new Set<string>();
+    return [...created, ...collected].filter((list) => {
+      if (seen.has(list.slug)) {
+        return false;
+      }
+      seen.add(list.slug);
+      return true;
+    });
+  }
+
+  public async getProblemListQuestions(
+    favoriteSlug: string,
+    skip = 0,
+    limit = 50,
+  ): Promise<ProblemListPage> {
+    const slug = requiredRequestValue(favoriteSlug, "problem list slug");
+    const data = await this.request<FavoriteQuestionListData>(
+      "FavoriteQuestionList",
+      PROBLEM_LIST_QUESTIONS_QUERY,
+      {
+        favoriteSlug: slug,
+        skip: Math.max(0, Math.trunc(skip)),
+        limit: clamp(limit, 1, 100),
+      },
+      {
+        referer: problemListReferer(slug),
+        requiresAuthentication: true,
+      },
+    );
+    const list = data.favoriteQuestionList;
+    if (list === null || list === undefined || !Array.isArray(list.questions)) {
+      throw new LeetCodeError("invalid-response", "Missing problem list questions.");
+    }
+    return {
+      questions: list.questions.map(mapProblemListQuestion),
+      total: requiredNonNegativeInteger(
+        list.totalLength,
+        "favoriteQuestionList.totalLength",
+      ),
+      hasMore: list.hasMore === true,
+    };
+  }
+
+  public async getProblemListProgress(
+    favoriteSlug: string,
+  ): Promise<ProblemListProgress> {
+    const slug = requiredRequestValue(favoriteSlug, "problem list slug");
+    const data = await this.request<FavoriteProgressData>(
+      "FavoriteUserQuestionProgress",
+      PROBLEM_LIST_PROGRESS_QUERY,
+      { favoriteSlug: slug },
+      {
+        referer: problemListReferer(slug),
+        requiresAuthentication: true,
+      },
+    );
+    const progress = data.favoriteUserQuestionProgressV2;
+    if (progress === null || progress === undefined) {
+      throw new LeetCodeError("invalid-response", "Missing problem list progress.");
+    }
+    return {
+      accepted: sumProgressCounts(
+        progress.numAcceptedQuestions,
+        "numAcceptedQuestions",
+      ),
+      failed: sumProgressCounts(
+        progress.numFailedQuestions,
+        "numFailedQuestions",
+      ),
+      untouched: sumProgressCounts(
+        progress.numUntouchedQuestions,
+        "numUntouchedQuestions",
+      ),
+    };
+  }
+
+  public async getProblemListQuestionAccepted(
+    favoriteSlug: string,
+    titleSlug: string,
+  ): Promise<boolean> {
+    const listSlug = requiredRequestValue(favoriteSlug, "problem list slug");
+    const problemSlug = requiredRequestValue(titleSlug, "problem slug");
+    const data = await this.request<FavoriteQuestionStatusData>(
+      "FavoriteQuestionAcStatus",
+      PROBLEM_LIST_QUESTION_STATUS_QUERY,
+      { favoriteSlug: listSlug, titleSlug: problemSlug },
+      {
+        referer: problemListReferer(listSlug),
+        requiresAuthentication: true,
+      },
+    );
+    // LeetCode returns null when the question has no status in this list session.
+    return data.favoriteQuestionAcStatus === true;
   }
 
   public async testSolution(
@@ -867,6 +1041,10 @@ function problemReferer(titleSlug: string): string {
   return `${LEETCODE_ORIGIN}/problems/${encodeURIComponent(titleSlug)}/`;
 }
 
+function problemListReferer(favoriteSlug: string): string {
+  return `${LEETCODE_ORIGIN}/problem-list/${encodeURIComponent(favoriteSlug)}/`;
+}
+
 function requiredRequestValue(value: string, field: string): string {
   const normalized = value.trim();
   if (normalized.length === 0) {
@@ -943,6 +1121,52 @@ function mapProblemIndexEntry(raw: RawProblemIndexEntry): ProblemSummary {
   };
 }
 
+function mapProblemListCollection(
+  value: RawFavoriteCollection | null | undefined,
+  source: ProblemListSource,
+  field: string,
+): ProblemListSummary[] {
+  if (value === null || value === undefined || !Array.isArray(value.favorites)) {
+    throw new LeetCodeError("invalid-response", `Missing ${field}.favorites.`);
+  }
+  return value.favorites
+    .filter((favorite) => asString(favorite.favoriteType)?.toUpperCase() === "NORMAL")
+    .map((favorite) => ({
+      name: requiredString(favorite.name, `${field}.favorites.name`),
+      slug: requiredString(favorite.slug, `${field}.favorites.slug`),
+      source,
+    }));
+}
+
+function mapProblemListQuestion(raw: RawFavoriteQuestion): ProblemListQuestion {
+  const rawStatus = asString(raw.status)?.toUpperCase();
+  return {
+    frontendId: requiredString(raw.questionFrontendId, "questionFrontendId"),
+    title: requiredString(raw.title, "title"),
+    ...(asString(raw.translatedTitle) === undefined
+      ? {}
+      : { translatedTitle: asString(raw.translatedTitle) }),
+    titleSlug: requiredString(raw.titleSlug, "titleSlug"),
+    difficulty: mapDifficulty(raw.difficulty),
+    paidOnly: raw.paidOnly === true,
+    status: mapStatus(raw.status),
+    previouslySolved: rawStatus === "PAST_SOLVED",
+  };
+}
+
+function sumProgressCounts(
+  values: readonly RawProgressCount[] | null | undefined,
+  field: string,
+): number {
+  if (!Array.isArray(values)) {
+    throw new LeetCodeError("invalid-response", `Missing ${field}.`);
+  }
+  return values.reduce(
+    (total, value) => total + requiredNonNegativeInteger(value.count, `${field}.count`),
+    0,
+  );
+}
+
 function mapDifficulty(value: unknown): Difficulty {
   switch (asString(value)?.toLowerCase()) {
     case "easy":
@@ -973,6 +1197,7 @@ function mapStatus(value: unknown): ProblemStatus {
   switch (asString(value)?.toUpperCase()) {
     case "AC":
     case "ACCEPTED":
+    case "SOLVED":
       return "AC";
     case "ATTEMPTED":
     case "TRIED":

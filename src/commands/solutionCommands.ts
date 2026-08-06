@@ -33,7 +33,10 @@ export class SolutionExecutionService implements vscode.Disposable {
     private readonly auth: AuthService,
     private readonly problems: ProblemService,
     private readonly panels: ExecutionPanelManager,
-    private readonly refreshProblemStatus: (problem: ProblemDetail) => Promise<void>,
+    private readonly refreshProblemStatus: (
+      problem: ProblemDetail,
+      accepted: boolean,
+    ) => Promise<void>,
   ) {}
 
   public readonly onDidChangeBusy = this.busyEmitter.event;
@@ -119,7 +122,7 @@ export class SolutionExecutionService implements vscode.Disposable {
     if (completion !== undefined) {
       showCompletionNotification(completion.accepted, "提交");
       try {
-        await this.refreshProblemStatus(completion.problem);
+        await this.refreshProblemStatus(completion.problem, completion.accepted);
       } catch {
         void vscode.window.showWarningMessage(
           "提交结果已返回，但题目列表状态暂时无法刷新。",

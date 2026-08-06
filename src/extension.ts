@@ -16,6 +16,7 @@ import { toUserMessage } from "./leetcode/errors";
 import type { ProblemDetail } from "./leetcode/types";
 import { ProblemCache } from "./problem/problemCache";
 import { ProblemService } from "./problem/problemService";
+import { ProblemListService } from "./problemList/problemListService";
 import { CacheStorage } from "./storage/cacheStorage";
 import { CredentialStore } from "./storage/credentialStore";
 import { ProblemPanelManager } from "./webview/problemPanel";
@@ -33,7 +34,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const problems = new ProblemService(client, problemCache);
   const dailyCache = new DailyChallengeCache(cache);
   const daily = new DailyChallengeService(client, dailyCache);
-  const explorer = new LeetDockTreeProvider(auth, problems, daily);
+  const problemLists = new ProblemListService(client);
+  const explorer = new LeetDockTreeProvider(auth, problems, daily, problemLists);
   const languages = new LanguageService();
   const codeFiles = new CodeFileService(context, languages);
   const panels = new ProblemPanelManager(context.extensionUri, {
@@ -60,7 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
     auth,
     problems,
     executionPanels,
-    async (problem) => {
+    async (problem, accepted) => {
       const refreshed = await problems.refreshProblem(problem.titleSlug);
       panels.update(refreshed);
       explorer.refresh();
@@ -70,7 +72,16 @@ export function activate(context: vscode.ExtensionContext): void {
         } catch {
           // The accepted submission remains valid if daily metadata cannot refresh.
         }
-        explorer.markDailyCompleted(problem.titleSlug);
+        if (accepted) {
+          explorer.markDailyCompleted(problem.titleSlug);
+        }
+      }
+      if (accepted) {
+        try {
+          await explorer.refreshLoadedProblemListsAfterAccepted(problem.titleSlug);
+        } catch {
+          // The accepted submission remains valid if problem-list progress cannot refresh.
+        }
       }
     },
   );
@@ -95,6 +106,7 @@ export function activate(context: vscode.ExtensionContext): void {
     auth.registerUserDataCleanup(async () => {
       panels.closeAll();
       executions.reset();
+      problemLists.reset();
       await Promise.all([
         problemCache.clearUserData(),
         daily.clearUserData(),
@@ -143,13 +155,16 @@ export function activate(context: vscode.ExtensionContext): void {
           const dailyState = await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Window,
-              title: "LeetDock 正在刷新题目与每日挑战…",
+              title: "LeetDock 正在刷新题目、每日挑战与题单…",
               cancellable: false,
             },
             async () => {
               const [, state] = await Promise.all([
                 problems.refreshProblemList(),
                 explorer.refreshDailyChallenge(true),
+                ...(auth.snapshot.status === "signed-in"
+                  ? [explorer.refreshMyProblemLists(true)]
+                  : []),
               ]);
               return state;
             },
@@ -159,7 +174,11 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         });
         explorer.refresh();
-        await vscode.window.showInformationMessage("LeetDock 题目列表和每日挑战已刷新。");
+        await vscode.window.showInformationMessage(
+          auth.snapshot.status === "signed-in"
+            ? "LeetDock 题目列表、每日挑战和我的题单已刷新。"
+            : "LeetDock 题目列表和每日挑战已刷新。",
+        );
       }),
     ),
     vscode.commands.registerCommand("leetdock.refreshDailyChallenge", () =>
@@ -171,6 +190,40 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         });
       }),
+    ),
+    vscode.commands.registerCommand("leetdock.refreshMyProblemLists", () =>
+      runWithErrorMessage(async () => {
+        if (auth.snapshot.status === "offline") {
+          const validation = await auth.revalidateAuthentication();
+          if (validation === "expired") {
+            return;
+          }
+          if (validation === "unavailable") {
+            throw new Error("仍无法连接力扣，请恢复网络后重试。");
+          }
+        }
+        await withAuthExpiryHandling(auth, async () => {
+          await explorer.refreshMyProblemLists(true);
+        });
+      }),
+    ),
+    vscode.commands.registerCommand("leetdock.refreshMyProblemList", (slug?: unknown) =>
+      runWithErrorMessage(() =>
+        withAuthExpiryHandling(auth, async () => {
+          if (typeof slug === "string") {
+            await explorer.refreshMyProblemList(slug);
+          }
+        })
+      ),
+    ),
+    vscode.commands.registerCommand("leetdock.loadMoreMyProblemList", (slug?: unknown) =>
+      runWithErrorMessage(() =>
+        withAuthExpiryHandling(auth, async () => {
+          if (typeof slug === "string") {
+            await explorer.loadMoreMyProblemList(slug);
+          }
+        })
+      ),
     ),
     vscode.commands.registerCommand("leetdock.clearCache", () =>
       runWithErrorMessage(async () => {

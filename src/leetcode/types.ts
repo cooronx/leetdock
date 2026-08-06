@@ -73,6 +73,31 @@ export interface ProblemSearchPage {
   readonly hasMore: boolean;
 }
 
+export type ProblemListSource = "created" | "collected";
+
+export interface ProblemListSummary {
+  readonly name: string;
+  readonly slug: string;
+  readonly source: ProblemListSource;
+}
+
+export interface ProblemListPage {
+  readonly questions: readonly ProblemListQuestion[];
+  readonly total: number;
+  readonly hasMore: boolean;
+}
+
+export interface ProblemListQuestion extends ProblemSummary {
+  /** Solved before the current list session, but not completed in this session. */
+  readonly previouslySolved: boolean;
+}
+
+export interface ProblemListProgress {
+  readonly accepted: number;
+  readonly failed: number;
+  readonly untouched: number;
+}
+
 export interface DailyChallenge {
   readonly date: string;
   readonly problem: ProblemSummary;

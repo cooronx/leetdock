@@ -92,3 +92,81 @@ export const DAILY_STREAK_QUERY = /* GraphQL */ `
     }
   }
 `;
+
+export const MY_PROBLEM_LISTS_QUERY = /* GraphQL */ `
+  query MyFavoriteLists {
+    myCreatedFavoriteList {
+      favorites {
+        name
+        slug
+        favoriteType
+      }
+    }
+    myCollectedFavoriteList {
+      favorites {
+        name
+        slug
+        favoriteType
+      }
+    }
+  }
+`;
+
+export const PROBLEM_LIST_QUESTIONS_QUERY = /* GraphQL */ `
+  query FavoriteQuestionList(
+    $favoriteSlug: String!
+    $limit: Int
+    $skip: Int
+    $version: String = "v2"
+  ) {
+    favoriteQuestionList(
+      favoriteSlug: $favoriteSlug
+      limit: $limit
+      skip: $skip
+      version: $version
+    ) {
+      questions {
+        questionFrontendId
+        title
+        translatedTitle
+        titleSlug
+        difficulty
+        paidOnly
+        status
+      }
+      totalLength
+      hasMore
+    }
+  }
+`;
+
+export const PROBLEM_LIST_PROGRESS_QUERY = /* GraphQL */ `
+  query FavoriteUserQuestionProgress($favoriteSlug: String!) {
+    favoriteUserQuestionProgressV2(favoriteSlug: $favoriteSlug) {
+      numAcceptedQuestions {
+        count
+        difficulty
+      }
+      numFailedQuestions {
+        count
+        difficulty
+      }
+      numUntouchedQuestions {
+        count
+        difficulty
+      }
+    }
+  }
+`;
+
+export const PROBLEM_LIST_QUESTION_STATUS_QUERY = /* GraphQL */ `
+  query FavoriteQuestionAcStatus(
+    $favoriteSlug: String!
+    $titleSlug: String!
+  ) {
+    favoriteQuestionAcStatus(
+      favoriteSlug: $favoriteSlug
+      titleSlug: $titleSlug
+    )
+  }
+`;

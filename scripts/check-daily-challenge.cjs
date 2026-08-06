@@ -96,6 +96,21 @@ const dailyStreak = {
   todayCompleted: true,
 };
 
+function emptyProblemLists() {
+  return {
+    reset() {},
+    loadCatalog: async () => [],
+    getDetailSnapshot: () => undefined,
+    loadDetail: async () => {
+      throw new Error("problem list detail should not load in daily checks");
+    },
+    loadMore: async () => {
+      throw new Error("problem list pagination should not run in daily checks");
+    },
+    refreshLoadedAfterAccepted: async () => undefined,
+  };
+}
+
 async function checkDailyChallengeRequests() {
   const requests = [];
   const responses = [
@@ -358,11 +373,15 @@ async function checkExplorerPresentation() {
     },
     { getRecent: async () => [] },
     daily,
+    emptyProblemLists(),
   );
 
   await provider.refreshDailyChallenge(true);
   const root = await provider.getChildren();
-  assert.deepEqual(root.map((node) => node.kind), ["account", "daily", "search", "recent"]);
+  assert.deepEqual(
+    root.map((node) => node.kind),
+    ["account", "daily", "my-lists", "search", "recent"],
+  );
   const dailyNode = root.find((node) => node.kind === "daily");
   const group = provider.getTreeItem(dailyNode);
   assert.equal(group.label, "连续 12 天");
@@ -409,6 +428,7 @@ async function checkExplorerPresentation() {
       load: async () => signedOutState,
       markCompleted: () => false,
     },
+    emptyProblemLists(),
   );
   await signedOutProvider.refreshDailyChallenge(true);
   const signedOutRoot = await signedOutProvider.getChildren();
@@ -439,6 +459,7 @@ async function checkExplorerPresentation() {
       },
       markCompleted: () => false,
     },
+    emptyProblemLists(),
   );
   await assert.rejects(failingProvider.refreshDailyChallenge(true));
   const failedRoot = await failingProvider.getChildren();
@@ -486,6 +507,7 @@ async function checkNewestExplorerLoadWins() {
       },
       markCompleted: () => false,
     },
+    emptyProblemLists(),
   );
 
   const olderLoad = provider.refreshDailyChallenge(true);

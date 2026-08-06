@@ -89,13 +89,18 @@
       },
       {
         "command": "leetdock.refreshProblemList",
-        "title": "Refresh Problem List",
+        "title": "Refresh LeetDock Data",
         "category": "LeetDock",
         "icon": "$(refresh)"
       },
       {
         "command": "leetdock.refreshDailyChallenge",
         "title": "Refresh Daily Challenge",
+        "category": "LeetDock"
+      },
+      {
+        "command": "leetdock.refreshMyProblemLists",
+        "title": "Refresh My Problem Lists",
         "category": "LeetDock"
       },
       {
@@ -204,10 +209,11 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
-    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:daily-challenge",
+    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:daily-challenge && npm run check:problem-lists",
     "check:extension-host": "node scripts/check-extension-host.cjs",
     "check:solution-support": "node scripts/check-solution-support.cjs",
     "check:daily-challenge": "node scripts/check-daily-challenge.cjs",
+    "check:problem-lists": "node scripts/check-problem-lists.cjs",
     "watch": "tsc --watch -p ."
   },
   "dependencies": {
