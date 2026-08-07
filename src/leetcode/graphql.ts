@@ -65,6 +65,20 @@ export const PROBLEM_DETAIL_QUERY = /* GraphQL */ `
   }
 `;
 
+export const QUESTION_TAGS_QUERY = /* GraphQL */ `
+  query QuestionTagTypeWithTags {
+    questionTagTypeWithTags {
+      tagRelation {
+        tag {
+          name
+          nameTranslated
+          slug
+        }
+      }
+    }
+  }
+`;
+
 export const DAILY_CHALLENGE_QUERY = /* GraphQL */ `
   query DailyChallenge {
     todayRecord {

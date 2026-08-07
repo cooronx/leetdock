@@ -222,13 +222,16 @@ async function checkExplorer() {
     { snapshot: dailyState, load: async () => dailyState, markCompleted: () => false },
     { reset() {} },
     companies,
+    { reset() {} },
   );
   await provider.refreshCompanies(true);
   const root = await provider.getChildren();
   const library = root.find((node) => node.kind === "library");
   assert.notEqual(library, undefined);
   assert.equal(provider.getTreeItem(library).label, "题库");
-  const companyGroup = (await provider.getChildren(library))[0];
+  const libraryChildren = await provider.getChildren(library);
+  assert.deepEqual(libraryChildren.map((node) => node.kind), ["tags", "companies"]);
+  const companyGroup = libraryChildren[1];
   assert.equal(companyGroup.kind, "companies");
   assert.equal(provider.getTreeItem(companyGroup).description, "1 个");
   const companyNodes = await provider.getChildren(companyGroup);
@@ -262,10 +265,11 @@ async function checkExplorer() {
     { load: async () => dailyState, markCompleted: () => false },
     { reset() {} },
     new CompanyService({}),
+    { reset() {} },
   );
   const freeRoot = await nonPremium.getChildren();
   const freeLibrary = freeRoot.find((node) => node.kind === "library");
-  const freeCompanies = (await nonPremium.getChildren(freeLibrary))[0];
+  const freeCompanies = (await nonPremium.getChildren(freeLibrary))[1];
   const premiumStatus = (await nonPremium.getChildren(freeCompanies))[0];
   assert.equal(premiumStatus.status, "premium");
   assert.equal(providerLabel(nonPremium, premiumStatus), "升级 Plus 会员后查看");

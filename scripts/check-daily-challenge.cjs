@@ -374,6 +374,8 @@ async function checkExplorerPresentation() {
     { getRecent: async () => [] },
     daily,
     emptyProblemLists(),
+    { reset() {} },
+    { reset() {} },
   );
 
   await provider.refreshDailyChallenge(true);
@@ -429,6 +431,8 @@ async function checkExplorerPresentation() {
       markCompleted: () => false,
     },
     emptyProblemLists(),
+    { reset() {} },
+    { reset() {} },
   );
   await signedOutProvider.refreshDailyChallenge(true);
   const signedOutRoot = await signedOutProvider.getChildren();
@@ -460,6 +464,8 @@ async function checkExplorerPresentation() {
       markCompleted: () => false,
     },
     emptyProblemLists(),
+    { reset() {} },
+    { reset() {} },
   );
   await assert.rejects(failingProvider.refreshDailyChallenge(true));
   const failedRoot = await failingProvider.getChildren();
@@ -508,6 +514,8 @@ async function checkNewestExplorerLoadWins() {
       markCompleted: () => false,
     },
     emptyProblemLists(),
+    { reset() {} },
+    { reset() {} },
   );
 
   const olderLoad = provider.refreshDailyChallenge(true);

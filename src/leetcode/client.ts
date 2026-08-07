@@ -18,6 +18,7 @@ import {
   PROBLEM_LIST_QUESTIONS_QUERY,
   PROBLEM_LIST_QUESTION_STATUS_QUERY,
   PROBLEM_LIST_QUERY,
+  QUESTION_TAGS_QUERY,
 } from "./graphql";
 import type {
   CodeSnippet,
@@ -40,6 +41,7 @@ import type {
   ProblemStatus,
   ProblemSummary,
   ProblemTag,
+  TagQuestionPage,
   UserInfo,
 } from "./types";
 
@@ -91,6 +93,20 @@ interface ProblemListData {
     readonly total?: unknown;
     readonly questions?: readonly RawProblemSummary[] | null;
   } | null;
+}
+
+interface RawOfficialTag {
+  readonly name?: unknown;
+  readonly nameTranslated?: unknown;
+  readonly slug?: unknown;
+}
+
+interface QuestionTagTypesData {
+  readonly questionTagTypeWithTags?: readonly {
+    readonly tagRelation?: readonly {
+      readonly tag?: RawOfficialTag | null;
+    }[] | null;
+  }[] | null;
 }
 
 interface RawProblemTag {
@@ -413,6 +429,67 @@ export class LeetCodeClient {
     return {
       questions: list.questions.map(mapProblemSummary),
       total: typeof list.total === "number" ? list.total : list.questions.length,
+      hasMore: list.hasMore === true,
+    };
+  }
+
+  public async getTags(): Promise<readonly ProblemTag[]> {
+    const data = await this.request<QuestionTagTypesData>(
+      "QuestionTagTypeWithTags",
+      QUESTION_TAGS_QUERY,
+      {},
+      { referer: "https://leetcode.cn/problemset/" },
+    );
+    if (!Array.isArray(data.questionTagTypeWithTags)) {
+      throw new LeetCodeError("invalid-response", "Missing question tag types.");
+    }
+
+    const seen = new Set<string>();
+    const tags: ProblemTag[] = [];
+    for (const type of data.questionTagTypeWithTags) {
+      if (!Array.isArray(type.tagRelation)) {
+        throw new LeetCodeError("invalid-response", "Missing question tag relations.");
+      }
+      for (const relation of type.tagRelation) {
+        if (relation.tag === null || relation.tag === undefined) {
+          throw new LeetCodeError("invalid-response", "Missing question tag.");
+        }
+        const tag = mapOfficialTag(relation.tag);
+        if (!seen.has(tag.slug)) {
+          seen.add(tag.slug);
+          tags.push(tag);
+        }
+      }
+    }
+    return tags;
+  }
+
+  public async getTagQuestions(
+    tagSlug: string,
+    skip = 0,
+    limit = 50,
+  ): Promise<TagQuestionPage> {
+    const slug = requiredRequestValue(tagSlug, "tag slug");
+    const data = await this.request<ProblemListData>(
+      "ProblemsetQuestionList",
+      PROBLEM_LIST_QUERY,
+      {
+        limit: clamp(limit, 1, 100),
+        skip: Math.max(0, Math.trunc(skip)),
+        filters: { tags: [slug] },
+      },
+      { referer: tagReferer(slug) },
+    );
+    const list = data.problemsetQuestionList;
+    if (list === null || list === undefined || !Array.isArray(list.questions)) {
+      throw new LeetCodeError("invalid-response", "Missing tag questions.");
+    }
+    return {
+      questions: list.questions.map(mapProblemSummary),
+      total: requiredNonNegativeInteger(
+        list.total,
+        "problemsetQuestionList.total",
+      ),
       hasMore: list.hasMore === true,
     };
   }
@@ -1166,6 +1243,10 @@ function companyReferer(companySlug: string): string {
   return `${LEETCODE_ORIGIN}/company/${encodeURIComponent(companySlug)}/`;
 }
 
+function tagReferer(tagSlug: string): string {
+  return `${LEETCODE_ORIGIN}/tag/${encodeURIComponent(tagSlug)}/problemset/`;
+}
+
 function requiredRequestValue(value: string, field: string): string {
   const normalized = value.trim();
   if (normalized.length === 0) {
@@ -1281,6 +1362,15 @@ function mapCompanySummary(raw: RawCompanyTag): CompanySummary {
     name: requiredString(raw.name, "companyTags.name"),
     ...(translatedName ? { translatedName } : {}),
     slug: requiredString(raw.slug, "companyTags.slug"),
+  };
+}
+
+function mapOfficialTag(raw: RawOfficialTag): ProblemTag {
+  const translatedName = asString(raw.nameTranslated)?.trim();
+  return {
+    name: requiredString(raw.name, "questionTag.name"),
+    ...(translatedName ? { translatedName } : {}),
+    slug: requiredString(raw.slug, "questionTag.slug"),
   };
 }
 

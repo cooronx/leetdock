@@ -315,6 +315,8 @@ async function checkExplorerPresentation() {
       markCompleted: () => false,
     },
     problemLists,
+    { reset() {} },
+    { reset() {} },
   );
 
   await provider.refreshMyProblemLists(true);
@@ -362,6 +364,8 @@ async function checkExplorerPresentation() {
     { getRecent: async () => [] },
     { load: async () => dailyState, markCompleted: () => false },
     new ProblemListService({}),
+    { reset() {} },
+    { reset() {} },
   );
   const signedOutRoot = await signedOutProvider.getChildren();
   const signedOutGroup = signedOutRoot.find((node) => node.kind === "my-lists");

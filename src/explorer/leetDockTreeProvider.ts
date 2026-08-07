@@ -15,6 +15,7 @@ import type {
   ProblemListQuestion,
   ProblemListSummary,
   ProblemSummary,
+  ProblemTag,
 } from "../leetcode/types";
 import type { RecentProblem } from "../problem/problemCache";
 import type { ProblemService } from "../problem/problemService";
@@ -22,6 +23,11 @@ import type {
   ProblemListDetailState,
   ProblemListService,
 } from "../problemList/problemListService";
+import {
+  displayTagName,
+  type TagDetailState,
+  TagService,
+} from "../tag/tagService";
 
 type DailyViewState =
   | { readonly kind: "idle" }
@@ -46,6 +52,16 @@ type CompaniesViewState =
   | { readonly kind: "error"; readonly error: unknown };
 
 type CompanyDetailViewState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly error: unknown };
+
+type TagsViewState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading" }
+  | { readonly kind: "ready"; readonly tags: readonly ProblemTag[] }
+  | { readonly kind: "error"; readonly error: unknown };
+
+type TagDetailViewState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly error: unknown };
 
@@ -77,6 +93,28 @@ export type LeetDockNode =
   }
   | { readonly kind: "problem-list-more"; readonly summary: ProblemListSummary }
   | { readonly kind: "library" }
+  | { readonly kind: "tags" }
+  | { readonly kind: "tag-search" }
+  | {
+    readonly kind: "tags-status";
+    readonly status: "empty" | "error" | "loading";
+  }
+  | {
+    readonly kind: "tag";
+    readonly summary: ProblemTag;
+    readonly detail?: TagDetailState;
+  }
+  | {
+    readonly kind: "tag-status";
+    readonly summary: ProblemTag;
+    readonly status: "empty" | "error" | "loading";
+  }
+  | {
+    readonly kind: "tag-problem";
+    readonly tagSlug: string;
+    readonly problem: ProblemSummary;
+  }
+  | { readonly kind: "tag-more"; readonly summary: ProblemTag }
   | { readonly kind: "companies" }
   | { readonly kind: "company-search" }
   | {
@@ -117,6 +155,10 @@ export class LeetDockTreeProvider
   private companiesLoadSequence = 0;
   private readonly companyDetailViews = new Map<string, CompanyDetailViewState>();
   private readonly loadingMoreCompanies = new Set<string>();
+  private tagsView: TagsViewState = { kind: "idle" };
+  private tagsLoadSequence = 0;
+  private readonly tagDetailViews = new Map<string, TagDetailViewState>();
+  private readonly loadingMoreTags = new Set<string>();
   private disposed = false;
 
   public constructor(
@@ -125,12 +167,14 @@ export class LeetDockTreeProvider
     private readonly daily: DailyChallengeService,
     private readonly problemLists: ProblemListService,
     private readonly companies: CompanyService,
+    private readonly tags: TagService,
   ) {
     this.authSubscription = auth.onDidChange(() => {
       this.dailyLoadSequence += 1;
       this.dailyView = { kind: "idle" };
       this.resetMyProblemLists(false);
       this.resetCompanies(false);
+      this.resetTags(false);
       this.refresh();
     });
   }
@@ -354,6 +398,108 @@ export class LeetDockTreeProvider
     }
   }
 
+  public async refreshTags(
+    force = true,
+  ): Promise<readonly ProblemTag[] | undefined> {
+    if (force) {
+      this.tags.reset();
+      this.tagDetailViews.clear();
+      this.loadingMoreTags.clear();
+    }
+    const sequence = this.tagsLoadSequence + 1;
+    this.tagsLoadSequence = sequence;
+    this.tagsView = { kind: "loading" };
+    this.refresh();
+    try {
+      const tags = await this.tags.loadCatalog();
+      if (sequence === this.tagsLoadSequence) {
+        this.tagsView = { kind: "ready", tags };
+        this.refresh();
+      }
+      return tags;
+    } catch (error) {
+      if (sequence === this.tagsLoadSequence) {
+        this.tagsView = { kind: "error", error };
+        this.refresh();
+      }
+      throw error;
+    }
+  }
+
+  public async refreshTag(slug: string): Promise<void> {
+    const summary = this.tagSummary(slug);
+    if (summary === undefined) {
+      return;
+    }
+    this.tagDetailViews.set(slug, { kind: "loading" });
+    this.refresh();
+    try {
+      await this.tags.loadDetail(summary);
+      this.tagDetailViews.delete(slug);
+      this.refresh();
+    } catch (error) {
+      this.tagDetailViews.set(slug, { kind: "error", error });
+      this.refresh();
+      throw error;
+    }
+  }
+
+  public async loadMoreTag(slug: string): Promise<void> {
+    if (this.loadingMoreTags.has(slug)) {
+      return;
+    }
+    this.loadingMoreTags.add(slug);
+    this.refresh();
+    try {
+      await this.tags.loadMore(slug);
+    } finally {
+      this.loadingMoreTags.delete(slug);
+      this.refresh();
+    }
+  }
+
+  public markTagProblemAccepted(titleSlug: string): void {
+    if (this.tags.markAccepted(titleSlug)) {
+      this.refresh();
+    }
+  }
+
+  public resetTags(refresh = true): void {
+    this.tagsLoadSequence += 1;
+    this.tags.reset();
+    this.tagsView = { kind: "idle" };
+    this.tagDetailViews.clear();
+    this.loadingMoreTags.clear();
+    if (refresh) {
+      this.refresh();
+    }
+  }
+
+  public async pickTag(): Promise<LeetDockNode | undefined> {
+    const tags = this.tagsView.kind === "ready"
+      ? this.tagsView.tags
+      : await this.refreshTags(false);
+    if (tags === undefined) {
+      return undefined;
+    }
+    const selected = await vscode.window.showQuickPick(
+      tags.map((tag) => ({
+        label: displayTagName(tag),
+        description: tag.translatedName === undefined ? tag.slug : tag.name,
+        detail: tag.slug,
+        tag,
+      })),
+      {
+        placeHolder: "搜索标签名称",
+        matchOnDescription: true,
+        matchOnDetail: true,
+      },
+    );
+    return selected === undefined
+      ? undefined
+      : { kind: "tag", summary: selected.tag };
+  }
+
   public async pickCompany(): Promise<LeetDockNode | undefined> {
     const companies = this.companiesView.kind === "ready"
       ? this.companiesView.companies
@@ -408,6 +554,23 @@ export class LeetDockTreeProvider
         );
       case "library":
         return libraryItem();
+      case "tags":
+        return tagsItem(this.tagsView);
+      case "tag-search":
+        return tagSearchItem();
+      case "tags-status":
+        return tagsStatusItem(element.status);
+      case "tag":
+        return tagItem(element.summary, element.detail);
+      case "tag-status":
+        return tagStatusItem(element.summary, element.status);
+      case "tag-problem":
+        return tagProblemItem(element.tagSlug, element.problem);
+      case "tag-more":
+        return tagMoreItem(
+          element.summary,
+          this.loadingMoreTags.has(element.summary.slug),
+        );
       case "companies":
         return companiesItem(this.companiesView, this.auth.snapshot);
       case "company-search":
@@ -472,7 +635,13 @@ export class LeetDockTreeProvider
       return this.problemListChildren(element.summary);
     }
     if (element.kind === "library") {
-      return [{ kind: "companies" }];
+      return [{ kind: "tags" }, { kind: "companies" }];
+    }
+    if (element.kind === "tags") {
+      return this.tagsChildren();
+    }
+    if (element.kind === "tag") {
+      return this.tagChildren(element.summary);
     }
     if (element.kind === "companies") {
       return this.companiesChildren();
@@ -491,8 +660,22 @@ export class LeetDockTreeProvider
 
   public getParent(element: LeetDockNode): LeetDockNode | undefined {
     switch (element.kind) {
+      case "tags":
       case "companies":
         return { kind: "library" };
+      case "tag-search":
+      case "tags-status":
+      case "tag":
+        return { kind: "tags" };
+      case "tag-status":
+      case "tag-problem":
+      case "tag-more": {
+        const slug = element.kind === "tag-problem"
+          ? element.tagSlug
+          : element.summary.slug;
+        const summary = this.tagSummary(slug);
+        return summary === undefined ? undefined : { kind: "tag", summary };
+      }
       case "company-search":
       case "companies-status":
       case "company":
@@ -616,6 +799,57 @@ export class LeetDockTreeProvider
     }
   }
 
+  private tagsChildren(): LeetDockNode[] {
+    if (this.tagsView.kind === "idle") {
+      void this.refreshTags(false).catch(() => undefined);
+      return [{ kind: "tags-status", status: "loading" }];
+    }
+    switch (this.tagsView.kind) {
+      case "loading":
+        return [{ kind: "tags-status", status: "loading" }];
+      case "error":
+        return [{ kind: "tags-status", status: "error" }];
+      case "ready":
+        if (this.tagsView.tags.length === 0) {
+          return [{ kind: "tags-status", status: "empty" }];
+        }
+        return [
+          { kind: "tag-search" },
+          ...this.tagsView.tags.map((summary) => ({
+            kind: "tag" as const,
+            summary,
+            detail: this.tags.getDetailSnapshot(summary.slug),
+          })),
+        ];
+    }
+  }
+
+  private tagChildren(summary: ProblemTag): LeetDockNode[] {
+    const view = this.tagDetailViews.get(summary.slug);
+    const detail = this.tags.getDetailSnapshot(summary.slug);
+    if (view?.kind === "error") {
+      return [{ kind: "tag-status", summary, status: "error" }];
+    }
+    if (detail === undefined) {
+      if (view?.kind !== "loading") {
+        void this.refreshTag(summary.slug).catch(() => undefined);
+      }
+      return [{ kind: "tag-status", summary, status: "loading" }];
+    }
+    const children: LeetDockNode[] = detail.questions.map((problem) => ({
+      kind: "tag-problem" as const,
+      tagSlug: summary.slug,
+      problem,
+    }));
+    if (children.length === 0) {
+      children.push({ kind: "tag-status", summary, status: "empty" });
+    }
+    if (detail.hasMore) {
+      children.push({ kind: "tag-more", summary });
+    }
+    return children;
+  }
+
   private companyChildren(summary: CompanySummary): LeetDockNode[] {
     if (!hasOnlinePremiumUser(this.auth.snapshot)) {
       return [];
@@ -648,6 +882,12 @@ export class LeetDockTreeProvider
   private companySummary(slug: string): CompanySummary | undefined {
     return this.companiesView.kind === "ready"
       ? this.companiesView.companies.find((company) => company.slug === slug)
+      : undefined;
+  }
+
+  private tagSummary(slug: string): ProblemTag | undefined {
+    return this.tagsView.kind === "ready"
+      ? this.tagsView.tags.find((tag) => tag.slug === slug)
       : undefined;
   }
 }
@@ -977,6 +1217,144 @@ function libraryItem(): vscode.TreeItem {
   item.id = "leetdock.library";
   item.iconPath = new vscode.ThemeIcon("library");
   item.contextValue = "leetdock.library";
+  return item;
+}
+
+function tagsItem(view: TagsViewState): vscode.TreeItem {
+  const item = new vscode.TreeItem("标签/tag", vscode.TreeItemCollapsibleState.Collapsed);
+  item.id = "leetdock.tags";
+  item.iconPath = new vscode.ThemeIcon("tag");
+  item.contextValue = `leetdock.tags.${view.kind}`;
+  if (view.kind === "loading") {
+    item.description = "正在加载";
+  } else if (view.kind === "error") {
+    item.description = "加载失败";
+    item.tooltip = "无法获取标签题库；展开后点击重试";
+  } else if (view.kind === "ready") {
+    item.description = `${view.tags.length} 个`;
+    item.tooltip = `官方标签题库 · ${view.tags.length} 个标签`;
+  }
+  return item;
+}
+
+function tagSearchItem(): vscode.TreeItem {
+  const item = new vscode.TreeItem("搜索标签…", vscode.TreeItemCollapsibleState.None);
+  item.id = "leetdock.tag.search";
+  item.iconPath = new vscode.ThemeIcon("search");
+  item.command = { command: "leetdock.searchTag", title: "搜索标签" };
+  item.contextValue = "leetdock.tag.search";
+  return item;
+}
+
+function tagsStatusItem(
+  status: "empty" | "error" | "loading",
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    status === "loading"
+      ? "正在获取标签列表…"
+      : status === "empty"
+      ? "暂无标签"
+      : "加载失败 · 点击重试",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.tags.${status}`;
+  item.iconPath = new vscode.ThemeIcon(
+    status === "loading" ? "loading~spin" : status === "empty" ? "info" : "refresh",
+  );
+  if (status === "error") {
+    item.command = { command: "leetdock.refreshTags", title: "刷新标签列表" };
+  }
+  item.contextValue = `leetdock.tags.${status}`;
+  return item;
+}
+
+function tagItem(
+  summary: ProblemTag,
+  detail: TagDetailState | undefined,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    displayTagName(summary),
+    vscode.TreeItemCollapsibleState.Collapsed,
+  );
+  item.id = `leetdock.tag.${summary.slug}`;
+  item.description = detail === undefined ? undefined : `${detail.total} 题`;
+  const names = summary.translatedName === undefined
+    ? [summary.name]
+    : [summary.translatedName, summary.name];
+  item.tooltip = `${names.join("\n")} · ${summary.slug}`;
+  item.iconPath = new vscode.ThemeIcon("tag");
+  item.contextValue = "leetdock.tag";
+  return item;
+}
+
+function tagStatusItem(
+  summary: ProblemTag,
+  status: "empty" | "error" | "loading",
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    status === "loading"
+      ? "正在加载标签题目…"
+      : status === "empty"
+      ? "该标签下暂无题目"
+      : "加载失败 · 点击重试",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.tag.${summary.slug}.${status}`;
+  item.iconPath = new vscode.ThemeIcon(
+    status === "loading" ? "loading~spin" : status === "empty" ? "info" : "refresh",
+  );
+  if (status === "error") {
+    item.command = {
+      command: "leetdock.refreshTag",
+      title: "刷新标签题目",
+      arguments: [summary.slug],
+    };
+  }
+  item.contextValue = `leetdock.tag.${status}`;
+  return item;
+}
+
+function tagProblemItem(
+  tagSlug: string,
+  problem: ProblemSummary,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    `${problem.frontendId}. ${displayTitle(problem)}`,
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.tag.${tagSlug}.problem.${problem.titleSlug}`;
+  item.description = [difficultyLabel(problem), statusLabel(problem)]
+    .filter((part) => part.length > 0)
+    .join(" · ");
+  item.tooltip = `${problem.title}\nhttps://leetcode.cn/problems/${problem.titleSlug}/`;
+  item.iconPath = new vscode.ThemeIcon(problemIcon(problem));
+  item.command = {
+    command: "leetdock.openProblem",
+    title: "打开标签题目",
+    arguments: [problem.titleSlug],
+  };
+  item.contextValue = "leetdock.tag.problem";
+  return item;
+}
+
+function tagMoreItem(
+  summary: ProblemTag,
+  loading: boolean,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    loading ? "正在加载更多…" : "加载更多…",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.tag.${summary.slug}.more`;
+  item.iconPath = new vscode.ThemeIcon(loading ? "loading~spin" : "more");
+  if (!loading) {
+    item.command = {
+      command: "leetdock.loadMoreTag",
+      title: "加载更多标签题目",
+      arguments: [summary.slug],
+    };
+  }
+  item.contextValue = "leetdock.tag.more";
   return item;
 }
 

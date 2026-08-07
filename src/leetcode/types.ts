@@ -73,6 +73,8 @@ export interface ProblemSearchPage {
   readonly hasMore: boolean;
 }
 
+export type TagQuestionPage = ProblemSearchPage;
+
 export type ProblemListSource = "created" | "collected";
 
 export interface ProblemListSummary {

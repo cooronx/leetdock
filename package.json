@@ -104,6 +104,26 @@
         "category": "LeetDock"
       },
       {
+        "command": "leetdock.searchTag",
+        "title": "Search Tag",
+        "category": "LeetDock"
+      },
+      {
+        "command": "leetdock.refreshTags",
+        "title": "Refresh Tags",
+        "category": "LeetDock"
+      },
+      {
+        "command": "leetdock.refreshTag",
+        "title": "Refresh Tag Questions",
+        "category": "LeetDock"
+      },
+      {
+        "command": "leetdock.loadMoreTag",
+        "title": "Load More Tag Questions",
+        "category": "LeetDock"
+      },
+      {
         "command": "leetdock.searchCompany",
         "title": "Search Company",
         "category": "LeetDock"
@@ -229,11 +249,12 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
-    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:daily-challenge && npm run check:problem-lists && npm run check:company-library",
+    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:daily-challenge && npm run check:problem-lists && npm run check:tag-library && npm run check:company-library",
     "check:extension-host": "node scripts/check-extension-host.cjs",
     "check:solution-support": "node scripts/check-solution-support.cjs",
     "check:daily-challenge": "node scripts/check-daily-challenge.cjs",
     "check:problem-lists": "node scripts/check-problem-lists.cjs",
+    "check:tag-library": "node scripts/check-tag-library.cjs",
     "check:company-library": "node scripts/check-company-library.cjs",
     "watch": "tsc --watch -p ."
   },
