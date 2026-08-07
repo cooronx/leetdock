@@ -137,7 +137,7 @@ export function renderProblemHtml(
     "default-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
-    `img-src ${webview.cspSource} https://leetcode.cn https://*.leetcode.cn https://leetcode-cn.com https://*.leetcode-cn.com`,
+    `img-src ${webview.cspSource} https://leetcode.cn https://*.leetcode.cn https://leetcode-cn.com https://*.leetcode-cn.com https://leetcode.com https://*.leetcode.com`,
     `font-src ${webview.cspSource}`,
     `style-src ${webview.cspSource}`,
     "style-src-attr 'unsafe-inline'",

@@ -952,24 +952,27 @@ function dailyGroupItem(view: DailyViewState): vscode.TreeItem {
 
 function dailyGroupLabel(view: DailyViewState): string {
   if (view.kind === "ready" && view.state.streak !== undefined) {
-    return `连续 ${view.state.streak.streakCount} 天`;
+    return `每日一题 （已连续${view.state.streak.streakCount}天）`;
   }
-  return "今日挑战";
+  return "每日一题";
 }
 
-function dailyGroupDescription(state: DailyChallengeState, offline: boolean): string {
+function dailyGroupDescription(
+  state: DailyChallengeState,
+  offline: boolean,
+): string | undefined {
   const parts: string[] = [];
   if (state.streakStatus === "signed-out") {
-    parts.push("登录后查看 streak");
+    parts.push("登录后查看连续天数");
   } else if (state.streakStatus === "unavailable") {
-    parts.push("streak 同步失败");
+    parts.push("连续天数同步失败");
   } else {
     parts.push(state.todayCompleted === true ? "今日已完成" : "今日待完成");
   }
   if (offline) {
     parts.push("离线数据");
   }
-  return parts.join(" · ");
+  return parts.length === 0 ? undefined : parts.join(" · ");
 }
 
 function dailyGroupTooltip(state: DailyChallengeState, offline: boolean): string {

@@ -386,7 +386,7 @@ async function checkExplorerPresentation() {
   );
   const dailyNode = root.find((node) => node.kind === "daily");
   const group = provider.getTreeItem(dailyNode);
-  assert.equal(group.label, "连续 12 天");
+  assert.equal(group.label, "每日一题 （已连续12天）");
   assert.equal(group.description, "今日已完成");
   assert.equal(group.iconPath.id, "flame");
   assert.equal(group.iconPath.color.id, "leetdock.streakFlame");
@@ -438,8 +438,8 @@ async function checkExplorerPresentation() {
   const signedOutRoot = await signedOutProvider.getChildren();
   const signedOutDaily = signedOutRoot.find((node) => node.kind === "daily");
   const signedOutGroup = signedOutProvider.getTreeItem(signedOutDaily);
-  assert.equal(signedOutGroup.label, "今日挑战");
-  assert.equal(signedOutGroup.description, "登录后查看 streak · 离线数据");
+  assert.equal(signedOutGroup.label, "每日一题");
+  assert.equal(signedOutGroup.description, "登录后查看连续天数 · 离线数据");
   const signedOutChildren = await signedOutProvider.getChildren(signedOutDaily);
   assert.deepEqual(
     signedOutChildren.map((node) => node.kind),
@@ -529,7 +529,8 @@ async function checkNewestExplorerLoadWins() {
 
   const root = await provider.getChildren();
   const group = provider.getTreeItem(root.find((node) => node.kind === "daily"));
-  assert.equal(group.label, "连续 20 天");
+  assert.equal(group.label, "每日一题 （已连续20天）");
+  assert.equal(group.description, "今日待完成");
   provider.dispose();
 }
 
