@@ -382,7 +382,7 @@ async function checkExplorerPresentation() {
   const root = await provider.getChildren();
   assert.deepEqual(
     root.map((node) => node.kind),
-    ["account", "daily", "my-lists", "library", "search", "recent"],
+    ["search", "daily", "library", "my-lists", "recent", "account"],
   );
   const dailyNode = root.find((node) => node.kind === "daily");
   const group = provider.getTreeItem(dailyNode);

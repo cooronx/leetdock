@@ -617,12 +617,12 @@ export class LeetDockTreeProvider
         void this.refreshDailyChallenge(false).catch(() => undefined);
       }
       return [
-        { kind: "account" },
-        { kind: "daily" },
-        { kind: "my-lists" },
-        { kind: "library" },
         { kind: "search" },
+        { kind: "daily" },
+        { kind: "library" },
+        { kind: "my-lists" },
         { kind: "recent" },
+        { kind: "account" },
       ];
     }
     if (element.kind === "daily") {
