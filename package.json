@@ -104,6 +104,26 @@
         "category": "LeetDock"
       },
       {
+        "command": "leetdock.searchCompany",
+        "title": "Search Company",
+        "category": "LeetDock"
+      },
+      {
+        "command": "leetdock.refreshCompanies",
+        "title": "Refresh Companies",
+        "category": "LeetDock"
+      },
+      {
+        "command": "leetdock.refreshCompany",
+        "title": "Refresh Company Questions",
+        "category": "LeetDock"
+      },
+      {
+        "command": "leetdock.loadMoreCompany",
+        "title": "Load More Company Questions",
+        "category": "LeetDock"
+      },
+      {
         "command": "leetdock.clearCache",
         "title": "Clear Cache",
         "category": "LeetDock",
@@ -209,11 +229,12 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
-    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:daily-challenge && npm run check:problem-lists",
+    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:daily-challenge && npm run check:problem-lists && npm run check:company-library",
     "check:extension-host": "node scripts/check-extension-host.cjs",
     "check:solution-support": "node scripts/check-solution-support.cjs",
     "check:daily-challenge": "node scripts/check-daily-challenge.cjs",
     "check:problem-lists": "node scripts/check-problem-lists.cjs",
+    "check:company-library": "node scripts/check-company-library.cjs",
     "watch": "tsc --watch -p ."
   },
   "dependencies": {

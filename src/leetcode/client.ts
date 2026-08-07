@@ -6,6 +6,9 @@ import {
 import { LeetCodeError } from "./errors";
 import { isJudgePending, mapJudgeResult } from "./judgeResult";
 import {
+  COMPANY_QUESTIONS_QUERY,
+  COMPANY_QUESTION_SOURCE_QUERY,
+  COMPANY_TAGS_QUERY,
   CURRENT_USER_QUERY,
   DAILY_CHALLENGE_QUERY,
   DAILY_STREAK_QUERY,
@@ -18,6 +21,10 @@ import {
 } from "./graphql";
 import type {
   CodeSnippet,
+  CompanyQuestion,
+  CompanyQuestionPage,
+  CompanyQuestionSource,
+  CompanySummary,
   DailyChallenge,
   DailyStreak,
   Difficulty,
@@ -182,6 +189,26 @@ interface RawFavoriteQuestion {
   readonly difficulty?: unknown;
   readonly paidOnly?: unknown;
   readonly status?: unknown;
+  readonly frequency?: unknown;
+}
+
+interface RawCompanyTag {
+  readonly name?: unknown;
+  readonly translatedName?: unknown;
+  readonly slug?: unknown;
+}
+
+interface CompanyTagsData {
+  readonly companyTags?: readonly RawCompanyTag[] | null;
+}
+
+interface CompanyQuestionSourceData {
+  readonly favoriteDetailV2?: {
+    readonly questionNumber?: unknown;
+    readonly generatedFavoritesInfo?: {
+      readonly defaultFavoriteSlug?: unknown;
+    } | null;
+  } | null;
 }
 
 interface RawProgressCount {
@@ -572,6 +599,96 @@ export class LeetCodeClient {
     );
     // LeetCode returns null when the question has no status in this list session.
     return data.favoriteQuestionAcStatus === true;
+  }
+
+  public async getCompanies(): Promise<readonly CompanySummary[]> {
+    const data = await this.request<CompanyTagsData>(
+      "CompanyTags",
+      COMPANY_TAGS_QUERY,
+      {},
+      {
+        referer: `${LEETCODE_ORIGIN}/company/`,
+        requiresAuthentication: true,
+      },
+    );
+    if (!Array.isArray(data.companyTags)) {
+      throw new LeetCodeError("invalid-response", "Missing company tags.");
+    }
+    const seen = new Set<string>();
+    return data.companyTags.map(mapCompanySummary).filter((company) => {
+      if (seen.has(company.slug)) {
+        return false;
+      }
+      seen.add(company.slug);
+      return true;
+    });
+  }
+
+  public async getCompanyQuestionSource(
+    companySlug: string,
+  ): Promise<CompanyQuestionSource> {
+    const slug = requiredRequestValue(companySlug, "company slug");
+    const data = await this.request<CompanyQuestionSourceData>(
+      "CompanyQuestionSource",
+      COMPANY_QUESTION_SOURCE_QUERY,
+      { favoriteSlug: slug },
+      {
+        referer: companyReferer(slug),
+        requiresAuthentication: true,
+      },
+    );
+    const detail = data.favoriteDetailV2;
+    const favoriteSlug = asString(
+      detail?.generatedFavoritesInfo?.defaultFavoriteSlug,
+    )?.trim();
+    if (detail === null || detail === undefined || !favoriteSlug) {
+      throw new LeetCodeError(
+        "authorization",
+        "Company questions are unavailable for this account.",
+      );
+    }
+    return {
+      favoriteSlug,
+      questionNumber: requiredNonNegativeInteger(
+        detail.questionNumber,
+        "favoriteDetailV2.questionNumber",
+      ),
+    };
+  }
+
+  public async getCompanyQuestions(
+    companySlug: string,
+    favoriteSlug: string,
+    skip = 0,
+    limit = 50,
+  ): Promise<CompanyQuestionPage> {
+    const company = requiredRequestValue(companySlug, "company slug");
+    const favorite = requiredRequestValue(favoriteSlug, "company question list slug");
+    const data = await this.request<FavoriteQuestionListData>(
+      "CompanyQuestionList",
+      COMPANY_QUESTIONS_QUERY,
+      {
+        favoriteSlug: favorite,
+        skip: Math.max(0, Math.trunc(skip)),
+        limit: clamp(limit, 1, 100),
+      },
+      {
+        referer: companyReferer(company),
+        requiresAuthentication: true,
+      },
+    );
+    const list = data.favoriteQuestionList;
+    if (list === null || list === undefined || !Array.isArray(list.questions)) {
+      throw new LeetCodeError("invalid-response", "Missing company questions.");
+    }
+    return {
+      questions: list.questions.map(mapCompanyQuestion),
+      total: requiredNonNegativeInteger(
+        list.totalLength,
+        "favoriteQuestionList.totalLength",
+      ),
+      hasMore: list.hasMore === true,
+    };
   }
 
   public async testSolution(
@@ -1045,6 +1162,10 @@ function problemListReferer(favoriteSlug: string): string {
   return `${LEETCODE_ORIGIN}/problem-list/${encodeURIComponent(favoriteSlug)}/`;
 }
 
+function companyReferer(companySlug: string): string {
+  return `${LEETCODE_ORIGIN}/company/${encodeURIComponent(companySlug)}/`;
+}
+
 function requiredRequestValue(value: string, field: string): string {
   const normalized = value.trim();
   if (normalized.length === 0) {
@@ -1154,6 +1275,31 @@ function mapProblemListQuestion(raw: RawFavoriteQuestion): ProblemListQuestion {
   };
 }
 
+function mapCompanySummary(raw: RawCompanyTag): CompanySummary {
+  const translatedName = asString(raw.translatedName)?.trim();
+  return {
+    name: requiredString(raw.name, "companyTags.name"),
+    ...(translatedName ? { translatedName } : {}),
+    slug: requiredString(raw.slug, "companyTags.slug"),
+  };
+}
+
+function mapCompanyQuestion(raw: RawFavoriteQuestion): CompanyQuestion {
+  const frequency = optionalNonNegativeNumber(raw.frequency);
+  return {
+    frontendId: requiredString(raw.questionFrontendId, "questionFrontendId"),
+    title: requiredString(raw.title, "title"),
+    ...(asString(raw.translatedTitle) === undefined
+      ? {}
+      : { translatedTitle: asString(raw.translatedTitle) }),
+    titleSlug: requiredString(raw.titleSlug, "titleSlug"),
+    difficulty: mapDifficulty(raw.difficulty),
+    paidOnly: raw.paidOnly === true,
+    status: mapStatus(raw.status),
+    ...(frequency === undefined ? {} : { frequency }),
+  };
+}
+
 function sumProgressCounts(
   values: readonly RawProgressCount[] | null | undefined,
   field: string,
@@ -1238,6 +1384,12 @@ function requiredBoolean(value: unknown, field: string): boolean {
     throw new LeetCodeError("invalid-response", `Invalid ${field} in response.`);
   }
   return value;
+}
+
+function optionalNonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 function asString(value: unknown): string | undefined {

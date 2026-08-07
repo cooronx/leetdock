@@ -170,3 +170,53 @@ export const PROBLEM_LIST_QUESTION_STATUS_QUERY = /* GraphQL */ `
     )
   }
 `;
+
+export const COMPANY_TAGS_QUERY = /* GraphQL */ `
+  query CompanyTags {
+    companyTags {
+      name
+      translatedName
+      slug
+    }
+  }
+`;
+
+export const COMPANY_QUESTION_SOURCE_QUERY = /* GraphQL */ `
+  query CompanyQuestionSource($favoriteSlug: String!) {
+    favoriteDetailV2(favoriteSlug: $favoriteSlug) {
+      questionNumber
+      generatedFavoritesInfo {
+        defaultFavoriteSlug
+      }
+    }
+  }
+`;
+
+export const COMPANY_QUESTIONS_QUERY = /* GraphQL */ `
+  query CompanyQuestionList(
+    $favoriteSlug: String!
+    $limit: Int
+    $skip: Int
+    $version: String = "v2"
+  ) {
+    favoriteQuestionList(
+      favoriteSlug: $favoriteSlug
+      limit: $limit
+      skip: $skip
+      version: $version
+    ) {
+      questions {
+        questionFrontendId
+        title
+        translatedTitle
+        titleSlug
+        difficulty
+        paidOnly
+        status
+        frequency
+      }
+      totalLength
+      hasMore
+    }
+  }
+`;

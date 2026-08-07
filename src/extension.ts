@@ -8,6 +8,7 @@ import {
   searchProblemCommand,
 } from "./commands/problemCommands";
 import { SolutionExecutionService } from "./commands/solutionCommands";
+import { CompanyService } from "./company/companyService";
 import { DailyChallengeCache } from "./daily/dailyChallengeCache";
 import { DailyChallengeService } from "./daily/dailyChallengeService";
 import { LeetDockTreeProvider } from "./explorer/leetDockTreeProvider";
@@ -35,7 +36,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const dailyCache = new DailyChallengeCache(cache);
   const daily = new DailyChallengeService(client, dailyCache);
   const problemLists = new ProblemListService(client);
-  const explorer = new LeetDockTreeProvider(auth, problems, daily, problemLists);
+  const companies = new CompanyService(client);
+  const explorer = new LeetDockTreeProvider(
+    auth,
+    problems,
+    daily,
+    problemLists,
+    companies,
+  );
   const languages = new LanguageService();
   const codeFiles = new CodeFileService(context, languages);
   const panels = new ProblemPanelManager(context.extensionUri, {
@@ -77,6 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       }
       if (accepted) {
+        explorer.markCompanyProblemAccepted(problem.titleSlug);
         try {
           await explorer.refreshLoadedProblemListsAfterAccepted(problem.titleSlug);
         } catch {
@@ -107,6 +116,7 @@ export function activate(context: vscode.ExtensionContext): void {
       panels.closeAll();
       executions.reset();
       problemLists.reset();
+      companies.reset();
       await Promise.all([
         problemCache.clearUserData(),
         daily.clearUserData(),
@@ -165,6 +175,10 @@ export function activate(context: vscode.ExtensionContext): void {
                 ...(auth.snapshot.status === "signed-in"
                   ? [explorer.refreshMyProblemLists(true)]
                   : []),
+                ...(auth.snapshot.status === "signed-in" &&
+                    auth.snapshot.user?.isPremium === true
+                  ? [explorer.refreshCompanies(true)]
+                  : []),
               ]);
               return state;
             },
@@ -175,7 +189,9 @@ export function activate(context: vscode.ExtensionContext): void {
         });
         explorer.refresh();
         await vscode.window.showInformationMessage(
-          auth.snapshot.status === "signed-in"
+          auth.snapshot.status === "signed-in" && auth.snapshot.user?.isPremium === true
+            ? "LeetDock 题目列表、每日挑战、我的题单和公司题库已刷新。"
+            : auth.snapshot.status === "signed-in"
             ? "LeetDock 题目列表、每日挑战和我的题单已刷新。"
             : "LeetDock 题目列表和每日挑战已刷新。",
         );
@@ -225,6 +241,49 @@ export function activate(context: vscode.ExtensionContext): void {
         })
       ),
     ),
+    vscode.commands.registerCommand("leetdock.searchCompany", () =>
+      runWithErrorMessage(async () => {
+        if (auth.snapshot.status !== "signed-in") {
+          await vscode.window.showInformationMessage("请先登录 LeetDock。");
+          return;
+        }
+        if (auth.snapshot.user?.isPremium !== true) {
+          await vscode.window.showInformationMessage(
+            "公司高频题需要力扣 Plus 会员。",
+          );
+          return;
+        }
+        const company = await withAuthExpiryHandling(auth, () => explorer.pickCompany());
+        if (company !== undefined) {
+          await treeView.reveal(company, { expand: true, focus: true, select: true });
+        }
+      }),
+    ),
+    vscode.commands.registerCommand("leetdock.refreshCompanies", () =>
+      runWithErrorMessage(() =>
+        withAuthExpiryHandling(auth, async () => {
+          await explorer.refreshCompanies(true);
+        })
+      ),
+    ),
+    vscode.commands.registerCommand("leetdock.refreshCompany", (slug?: unknown) =>
+      runWithErrorMessage(() =>
+        withAuthExpiryHandling(auth, async () => {
+          if (typeof slug === "string") {
+            await explorer.refreshCompany(slug);
+          }
+        })
+      ),
+    ),
+    vscode.commands.registerCommand("leetdock.loadMoreCompany", (slug?: unknown) =>
+      runWithErrorMessage(() =>
+        withAuthExpiryHandling(auth, async () => {
+          if (typeof slug === "string") {
+            await explorer.loadMoreCompany(slug);
+          }
+        })
+      ),
+    ),
     vscode.commands.registerCommand("leetdock.clearCache", () =>
       runWithErrorMessage(async () => {
         const confirmed = await vscode.window.showWarningMessage(
@@ -240,6 +299,7 @@ export function activate(context: vscode.ExtensionContext): void {
           daily.clearAll(),
         ]);
         explorer.resetDailyChallenge();
+        explorer.resetCompanies();
         await vscode.window.showInformationMessage("LeetDock 缓存已清除。");
       }),
     ),

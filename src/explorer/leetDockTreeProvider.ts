@@ -1,10 +1,17 @@
 import * as vscode from "vscode";
 import type { AuthService, AuthSnapshot } from "../auth/authService";
+import {
+  CompanyService,
+  displayCompanyName,
+  type CompanyDetailState,
+} from "../company/companyService";
 import type {
   DailyChallengeService,
   DailyChallengeState,
 } from "../daily/dailyChallengeService";
 import type {
+  CompanyQuestion,
+  CompanySummary,
   ProblemListQuestion,
   ProblemListSummary,
   ProblemSummary,
@@ -32,7 +39,17 @@ type ProblemListDetailViewState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly error: unknown };
 
-type LeetDockNode =
+type CompaniesViewState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading" }
+  | { readonly kind: "ready"; readonly companies: readonly CompanySummary[] }
+  | { readonly kind: "error"; readonly error: unknown };
+
+type CompanyDetailViewState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly error: unknown };
+
+export type LeetDockNode =
   | { readonly kind: "account" }
   | { readonly kind: "daily" }
   | { readonly kind: "daily-problem"; readonly state: DailyChallengeState }
@@ -59,6 +76,29 @@ type LeetDockNode =
     readonly problem: ProblemListQuestion;
   }
   | { readonly kind: "problem-list-more"; readonly summary: ProblemListSummary }
+  | { readonly kind: "library" }
+  | { readonly kind: "companies" }
+  | { readonly kind: "company-search" }
+  | {
+    readonly kind: "companies-status";
+    readonly status: "empty" | "error" | "loading" | "premium" | "sign-in";
+  }
+  | {
+    readonly kind: "company";
+    readonly summary: CompanySummary;
+    readonly detail?: CompanyDetailState;
+  }
+  | {
+    readonly kind: "company-status";
+    readonly summary: CompanySummary;
+    readonly status: "empty" | "error" | "loading";
+  }
+  | {
+    readonly kind: "company-problem";
+    readonly companySlug: string;
+    readonly problem: CompanyQuestion;
+  }
+  | { readonly kind: "company-more"; readonly summary: CompanySummary }
   | { readonly kind: "search" }
   | { readonly kind: "recent" }
   | { readonly kind: "problem"; readonly problem: RecentProblem };
@@ -73,6 +113,10 @@ export class LeetDockTreeProvider
   private problemListsLoadSequence = 0;
   private readonly problemListDetailViews = new Map<string, ProblemListDetailViewState>();
   private readonly loadingMoreProblemLists = new Set<string>();
+  private companiesView: CompaniesViewState = { kind: "idle" };
+  private companiesLoadSequence = 0;
+  private readonly companyDetailViews = new Map<string, CompanyDetailViewState>();
+  private readonly loadingMoreCompanies = new Set<string>();
   private disposed = false;
 
   public constructor(
@@ -80,11 +124,13 @@ export class LeetDockTreeProvider
     private readonly problems: ProblemService,
     private readonly daily: DailyChallengeService,
     private readonly problemLists: ProblemListService,
+    private readonly companies: CompanyService,
   ) {
     this.authSubscription = auth.onDidChange(() => {
       this.dailyLoadSequence += 1;
       this.dailyView = { kind: "idle" };
       this.resetMyProblemLists(false);
+      this.resetCompanies(false);
       this.refresh();
     });
   }
@@ -227,6 +273,112 @@ export class LeetDockTreeProvider
     }
   }
 
+  public async refreshCompanies(
+    force = true,
+  ): Promise<readonly CompanySummary[] | undefined> {
+    if (!hasOnlinePremiumUser(this.auth.snapshot)) {
+      this.resetCompanies();
+      return undefined;
+    }
+    if (force) {
+      this.companies.reset();
+      this.companyDetailViews.clear();
+      this.loadingMoreCompanies.clear();
+    }
+    const sequence = this.companiesLoadSequence + 1;
+    this.companiesLoadSequence = sequence;
+    this.companiesView = { kind: "loading" };
+    this.refresh();
+    try {
+      const companies = await this.companies.loadCatalog();
+      if (sequence === this.companiesLoadSequence) {
+        this.companiesView = { kind: "ready", companies };
+        this.refresh();
+      }
+      return companies;
+    } catch (error) {
+      if (sequence === this.companiesLoadSequence) {
+        this.companiesView = { kind: "error", error };
+        this.refresh();
+      }
+      throw error;
+    }
+  }
+
+  public async refreshCompany(slug: string): Promise<void> {
+    const summary = this.companySummary(slug);
+    if (summary === undefined || !hasOnlinePremiumUser(this.auth.snapshot)) {
+      return;
+    }
+    this.companyDetailViews.set(slug, { kind: "loading" });
+    this.refresh();
+    try {
+      await this.companies.loadDetail(summary);
+      this.companyDetailViews.delete(slug);
+      this.refresh();
+    } catch (error) {
+      this.companyDetailViews.set(slug, { kind: "error", error });
+      this.refresh();
+      throw error;
+    }
+  }
+
+  public async loadMoreCompany(slug: string): Promise<void> {
+    if (this.loadingMoreCompanies.has(slug)) {
+      return;
+    }
+    this.loadingMoreCompanies.add(slug);
+    this.refresh();
+    try {
+      await this.companies.loadMore(slug);
+    } finally {
+      this.loadingMoreCompanies.delete(slug);
+      this.refresh();
+    }
+  }
+
+  public markCompanyProblemAccepted(titleSlug: string): void {
+    if (this.companies.markAccepted(titleSlug)) {
+      this.refresh();
+    }
+  }
+
+  public resetCompanies(refresh = true): void {
+    this.companiesLoadSequence += 1;
+    this.companies.reset();
+    this.companiesView = { kind: "idle" };
+    this.companyDetailViews.clear();
+    this.loadingMoreCompanies.clear();
+    if (refresh) {
+      this.refresh();
+    }
+  }
+
+  public async pickCompany(): Promise<LeetDockNode | undefined> {
+    const companies = this.companiesView.kind === "ready"
+      ? this.companiesView.companies
+      : await this.refreshCompanies(false);
+    if (companies === undefined) {
+      return undefined;
+    }
+    const selected = await vscode.window.showQuickPick(
+      companies.map((company) => ({
+        label: displayCompanyName(company),
+        description: company.translatedName === undefined ? company.slug : company.name,
+        detail: company.slug,
+        company,
+      })),
+      {
+        placeHolder: "搜索公司名称",
+        matchOnDescription: true,
+        matchOnDetail: true,
+      },
+    );
+    return selected === undefined
+      ? undefined
+      : { kind: "company", summary: selected.company };
+  }
+
   public getTreeItem(element: LeetDockNode): vscode.TreeItem {
     switch (element.kind) {
       case "account":
@@ -253,6 +405,25 @@ export class LeetDockTreeProvider
         return problemListMoreItem(
           element.summary,
           this.loadingMoreProblemLists.has(element.summary.slug),
+        );
+      case "library":
+        return libraryItem();
+      case "companies":
+        return companiesItem(this.companiesView, this.auth.snapshot);
+      case "company-search":
+        return companySearchItem();
+      case "companies-status":
+        return companiesStatusItem(element.status);
+      case "company":
+        return companyItem(element.summary, element.detail);
+      case "company-status":
+        return companyStatusItem(element.summary, element.status);
+      case "company-problem":
+        return companyProblemItem(element.companySlug, element.problem);
+      case "company-more":
+        return companyMoreItem(
+          element.summary,
+          this.loadingMoreCompanies.has(element.summary.slug),
         );
       case "search": {
         const item = new vscode.TreeItem("搜索题目", vscode.TreeItemCollapsibleState.None);
@@ -286,6 +457,7 @@ export class LeetDockTreeProvider
         { kind: "account" },
         { kind: "daily" },
         { kind: "my-lists" },
+        { kind: "library" },
         { kind: "search" },
         { kind: "recent" },
       ];
@@ -299,6 +471,15 @@ export class LeetDockTreeProvider
     if (element.kind === "problem-list") {
       return this.problemListChildren(element.summary);
     }
+    if (element.kind === "library") {
+      return [{ kind: "companies" }];
+    }
+    if (element.kind === "companies") {
+      return this.companiesChildren();
+    }
+    if (element.kind === "company") {
+      return this.companyChildren(element.summary);
+    }
     if (element.kind !== "recent") {
       return [];
     }
@@ -306,6 +487,28 @@ export class LeetDockTreeProvider
       kind: "problem" as const,
       problem,
     }));
+  }
+
+  public getParent(element: LeetDockNode): LeetDockNode | undefined {
+    switch (element.kind) {
+      case "companies":
+        return { kind: "library" };
+      case "company-search":
+      case "companies-status":
+      case "company":
+        return { kind: "companies" };
+      case "company-status":
+      case "company-problem":
+      case "company-more": {
+        const slug = element.kind === "company-problem"
+          ? element.companySlug
+          : element.summary.slug;
+        const summary = this.companySummary(slug);
+        return summary === undefined ? undefined : { kind: "company", summary };
+      }
+      default:
+        return undefined;
+    }
   }
 
   public dispose(): void {
@@ -373,6 +576,79 @@ export class LeetDockTreeProvider
       children.push({ kind: "problem-list-more", summary });
     }
     return children;
+  }
+
+  private companiesChildren(): LeetDockNode[] {
+    const snapshot = this.auth.snapshot;
+    if (snapshot.status === "signed-out") {
+      return [{ kind: "companies-status", status: "sign-in" }];
+    }
+    if (snapshot.status === "verifying") {
+      return [{ kind: "companies-status", status: "loading" }];
+    }
+    if (snapshot.status === "offline") {
+      return [{ kind: "companies-status", status: "error" }];
+    }
+    if (snapshot.user?.isPremium !== true) {
+      return [{ kind: "companies-status", status: "premium" }];
+    }
+    if (this.companiesView.kind === "idle") {
+      void this.refreshCompanies(false).catch(() => undefined);
+      return [{ kind: "companies-status", status: "loading" }];
+    }
+    switch (this.companiesView.kind) {
+      case "loading":
+        return [{ kind: "companies-status", status: "loading" }];
+      case "error":
+        return [{ kind: "companies-status", status: "error" }];
+      case "ready":
+        if (this.companiesView.companies.length === 0) {
+          return [{ kind: "companies-status", status: "empty" }];
+        }
+        return [
+          { kind: "company-search" },
+          ...this.companiesView.companies.map((summary) => ({
+            kind: "company" as const,
+            summary,
+            detail: this.companies.getDetailSnapshot(summary.slug),
+          })),
+        ];
+    }
+  }
+
+  private companyChildren(summary: CompanySummary): LeetDockNode[] {
+    if (!hasOnlinePremiumUser(this.auth.snapshot)) {
+      return [];
+    }
+    const view = this.companyDetailViews.get(summary.slug);
+    const detail = this.companies.getDetailSnapshot(summary.slug);
+    if (view?.kind === "error") {
+      return [{ kind: "company-status", summary, status: "error" }];
+    }
+    if (detail === undefined) {
+      if (view?.kind !== "loading") {
+        void this.refreshCompany(summary.slug).catch(() => undefined);
+      }
+      return [{ kind: "company-status", summary, status: "loading" }];
+    }
+    const children: LeetDockNode[] = detail.questions.map((problem) => ({
+      kind: "company-problem" as const,
+      companySlug: summary.slug,
+      problem,
+    }));
+    if (children.length === 0) {
+      children.push({ kind: "company-status", summary, status: "empty" });
+    }
+    if (detail.hasMore) {
+      children.push({ kind: "company-more", summary });
+    }
+    return children;
+  }
+
+  private companySummary(slug: string): CompanySummary | undefined {
+    return this.companiesView.kind === "ready"
+      ? this.companiesView.companies.find((company) => company.slug === slug)
+      : undefined;
   }
 }
 
@@ -696,12 +972,199 @@ function problemListMoreItem(
   return item;
 }
 
+function libraryItem(): vscode.TreeItem {
+  const item = new vscode.TreeItem("题库", vscode.TreeItemCollapsibleState.Collapsed);
+  item.id = "leetdock.library";
+  item.iconPath = new vscode.ThemeIcon("library");
+  item.contextValue = "leetdock.library";
+  return item;
+}
+
+function companiesItem(
+  view: CompaniesViewState,
+  auth: AuthSnapshot,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem("公司", vscode.TreeItemCollapsibleState.Collapsed);
+  item.id = "leetdock.companies";
+  item.iconPath = new vscode.ThemeIcon("organization");
+  item.contextValue = `leetdock.companies.${view.kind}`;
+  if (auth.status === "signed-out") {
+    item.description = "登录后查看";
+  } else if (auth.status === "verifying") {
+    item.description = "正在验证";
+  } else if (auth.status === "offline" || view.kind === "error") {
+    item.description = "加载失败";
+    item.tooltip = "无法获取公司题库；展开后点击重试";
+  } else if (auth.user?.isPremium !== true) {
+    item.description = "需要 Plus";
+    item.tooltip = "公司高频题是力扣 Plus 会员内容";
+  } else if (view.kind === "loading") {
+    item.description = "正在加载";
+  } else if (view.kind === "ready") {
+    item.description = `${view.companies.length} 个`;
+    item.tooltip = `官方公司题库 · ${view.companies.length} 个公司`;
+  }
+  return item;
+}
+
+function companySearchItem(): vscode.TreeItem {
+  const item = new vscode.TreeItem("搜索公司…", vscode.TreeItemCollapsibleState.None);
+  item.id = "leetdock.company.search";
+  item.iconPath = new vscode.ThemeIcon("search");
+  item.command = { command: "leetdock.searchCompany", title: "搜索公司" };
+  item.contextValue = "leetdock.company.search";
+  return item;
+}
+
+function companiesStatusItem(
+  status: "empty" | "error" | "loading" | "premium" | "sign-in",
+): vscode.TreeItem {
+  const label = status === "sign-in"
+    ? "登录后查看公司题库"
+    : status === "premium"
+    ? "升级 Plus 会员后查看"
+    : status === "loading"
+    ? "正在获取公司列表…"
+    : status === "empty"
+    ? "暂无公司题库"
+    : "加载失败 · 点击重试";
+  const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+  item.id = `leetdock.companies.${status}`;
+  item.iconPath = new vscode.ThemeIcon(
+    status === "sign-in"
+      ? "sign-in"
+      : status === "premium"
+      ? "star-full"
+      : status === "loading"
+      ? "loading~spin"
+      : status === "empty"
+      ? "info"
+      : "refresh",
+  );
+  if (status === "sign-in") {
+    item.command = { command: "leetdock.signIn", title: "登录" };
+  } else if (status === "premium") {
+    item.command = {
+      command: "vscode.open",
+      title: "查看 Plus 会员",
+      arguments: [vscode.Uri.parse("https://leetcode.cn/premium/")],
+    };
+  } else if (status === "error") {
+    item.command = { command: "leetdock.refreshCompanies", title: "刷新公司列表" };
+  }
+  item.contextValue = `leetdock.companies.${status}`;
+  return item;
+}
+
+function companyItem(
+  summary: CompanySummary,
+  detail: CompanyDetailState | undefined,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    displayCompanyName(summary),
+    vscode.TreeItemCollapsibleState.Collapsed,
+  );
+  item.id = `leetdock.company.${summary.slug}`;
+  item.description = detail === undefined ? undefined : `${detail.total} 题`;
+  item.tooltip = detail === undefined
+    ? `${summary.name}\n官方公司题库`
+    : `${summary.name}\n官方默认时间范围 · ${detail.total} 题`;
+  item.iconPath = new vscode.ThemeIcon("organization");
+  item.contextValue = "leetdock.company";
+  return item;
+}
+
+function companyStatusItem(
+  summary: CompanySummary,
+  status: "empty" | "error" | "loading",
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    status === "loading"
+      ? "正在加载公司题目…"
+      : status === "empty"
+      ? "当前范围内暂无题目"
+      : "加载失败 · 点击重试",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.company.${summary.slug}.${status}`;
+  item.iconPath = new vscode.ThemeIcon(
+    status === "loading" ? "loading~spin" : status === "empty" ? "info" : "refresh",
+  );
+  if (status === "error") {
+    item.command = {
+      command: "leetdock.refreshCompany",
+      title: "刷新公司题目",
+      arguments: [summary.slug],
+    };
+  }
+  item.contextValue = `leetdock.company.${status}`;
+  return item;
+}
+
+function companyProblemItem(
+  companySlug: string,
+  problem: CompanyQuestion,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    `${problem.frontendId}. ${displayTitle(problem)}`,
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.company.${companySlug}.problem.${problem.titleSlug}`;
+  item.description = [difficultyLabel(problem), statusLabel(problem)]
+    .filter((part) => part.length > 0)
+    .join(" · ");
+  item.tooltip = [
+    problem.title,
+    ...(problem.frequency === undefined
+      ? []
+      : [`出题频率：${formatFrequency(problem.frequency)}`]),
+    `https://leetcode.cn/problems/${problem.titleSlug}/`,
+  ].join("\n");
+  item.iconPath = new vscode.ThemeIcon(problemIcon(problem));
+  item.command = {
+    command: "leetdock.openProblem",
+    title: "打开公司题目",
+    arguments: [problem.titleSlug],
+  };
+  item.contextValue = "leetdock.company.problem";
+  return item;
+}
+
+function companyMoreItem(
+  summary: CompanySummary,
+  loading: boolean,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    loading ? "正在加载更多…" : "加载更多…",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.company.${summary.slug}.more`;
+  item.iconPath = new vscode.ThemeIcon(loading ? "loading~spin" : "more");
+  if (!loading) {
+    item.command = {
+      command: "leetdock.loadMoreCompany",
+      title: "加载更多公司题目",
+      arguments: [summary.slug],
+    };
+  }
+  item.contextValue = "leetdock.company.more";
+  return item;
+}
+
+function formatFrequency(frequency: number): string {
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(frequency);
+}
+
 function hasSignedInUser(snapshot: AuthSnapshot): boolean {
   return snapshot.status !== "signed-out" && snapshot.user?.isSignedIn === true;
 }
 
 function hasOnlineSignedInUser(snapshot: AuthSnapshot): boolean {
   return snapshot.status === "signed-in" && snapshot.user?.isSignedIn === true;
+}
+
+function hasOnlinePremiumUser(snapshot: AuthSnapshot): boolean {
+  return hasOnlineSignedInUser(snapshot) && snapshot.user?.isPremium === true;
 }
 
 function isOffline(state: DailyChallengeState): boolean {

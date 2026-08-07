@@ -98,6 +98,27 @@ export interface ProblemListProgress {
   readonly untouched: number;
 }
 
+export interface CompanySummary {
+  readonly name: string;
+  readonly translatedName?: string;
+  readonly slug: string;
+}
+
+export interface CompanyQuestion extends ProblemSummary {
+  readonly frequency?: number;
+}
+
+export interface CompanyQuestionPage {
+  readonly questions: readonly CompanyQuestion[];
+  readonly total: number;
+  readonly hasMore: boolean;
+}
+
+export interface CompanyQuestionSource {
+  readonly favoriteSlug: string;
+  readonly questionNumber: number;
+}
+
 export interface DailyChallenge {
   readonly date: string;
   readonly problem: ProblemSummary;
