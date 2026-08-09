@@ -41,7 +41,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const tags = new TagService(client);
   const explorer = new LeetDockTreeProvider(
     auth,
-    problems,
     daily,
     problemLists,
     companies,
@@ -326,7 +325,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("leetdock.clearCache", () =>
       runWithErrorMessage(async () => {
         const confirmed = await vscode.window.showWarningMessage(
-          "确定清除 LeetDock 的题目缓存和最近打开记录吗？登录状态、默认语言和代码目录不会改变。",
+          "确定清除 LeetDock 的题目缓存吗？登录状态、默认语言和代码目录不会改变。",
           { modal: true },
           "清除",
         );

@@ -371,7 +371,6 @@ async function checkExplorerPresentation() {
       },
       onDidChange: () => ({ dispose() {} }),
     },
-    { getRecent: async () => [] },
     daily,
     emptyProblemLists(),
     { reset() {} },
@@ -382,7 +381,7 @@ async function checkExplorerPresentation() {
   const root = await provider.getChildren();
   assert.deepEqual(
     root.map((node) => node.kind),
-    ["search", "daily", "library", "my-lists", "recent", "account"],
+    ["search", "daily", "library", "my-lists", "account"],
   );
   const dailyNode = root.find((node) => node.kind === "daily");
   const group = provider.getTreeItem(dailyNode);
@@ -424,7 +423,6 @@ async function checkExplorerPresentation() {
       snapshot: { status: "signed-out" },
       onDidChange: () => ({ dispose() {} }),
     },
-    { getRecent: async () => [] },
     {
       snapshot: signedOutState,
       load: async () => signedOutState,
@@ -456,7 +454,6 @@ async function checkExplorerPresentation() {
       snapshot: { status: "signed-out" },
       onDidChange: () => ({ dispose() {} }),
     },
-    { getRecent: async () => [] },
     {
       load: async () => {
         throw new LeetCodeError("network", "offline");
@@ -504,7 +501,6 @@ async function checkNewestExplorerLoadWins() {
       },
       onDidChange: () => ({ dispose() {} }),
     },
-    { getRecent: async () => [] },
     {
       snapshot: newerState,
       load: async () => {

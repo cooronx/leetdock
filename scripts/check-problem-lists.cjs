@@ -308,7 +308,6 @@ async function checkExplorerPresentation() {
       },
       onDidChange: () => ({ dispose() {} }),
     },
-    { getRecent: async () => [] },
     {
       snapshot: dailyState,
       load: async () => dailyState,
@@ -361,7 +360,6 @@ async function checkExplorerPresentation() {
       snapshot: { status: "signed-out" },
       onDidChange: () => ({ dispose() {} }),
     },
-    { getRecent: async () => [] },
     { load: async () => dailyState, markCompleted: () => false },
     new ProblemListService({}),
     { reset() {} },

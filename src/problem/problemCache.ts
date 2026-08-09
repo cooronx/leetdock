@@ -9,17 +9,11 @@ import { CacheStorage } from "../storage/cacheStorage";
 const SEARCH_TTL_MS = 24 * 60 * 60 * 1_000;
 const INDEX_TTL_MS = SEARCH_TTL_MS;
 const DETAIL_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
-const RECENT_LIMIT = 20;
 
 const INDEX_KEY = "problem.index";
-const RECENT_KEY = "problem.recent";
 const USER_STATUSES_KEY = "problem.userStatuses";
 const SEARCH_PREFIX = "problem.search.";
 const DETAIL_PREFIX = "problem.detail.";
-
-export interface RecentProblem extends ProblemSummary {
-  readonly openedAt: number;
-}
 
 type StoredStatus = Exclude<ProblemStatus, null>;
 type UserStatuses = Readonly<Record<string, StoredStatus>>;
@@ -130,33 +124,6 @@ export class ProblemCache {
     );
   }
 
-  public async addRecent(
-    problem: ProblemSummary,
-    generation: number,
-  ): Promise<void> {
-    await this.serializeMutation(async () => {
-      if (generation !== this.userDataGeneration) {
-        return;
-      }
-      await this.captureStatusesUnqueued([problem], generation);
-      const existing = await this.cache.get<readonly RecentProblem[]>(RECENT_KEY) ?? [];
-      const recent: RecentProblem = {
-        ...stripStatus(problem),
-        openedAt: Date.now(),
-      };
-      const next = [
-        recent,
-        ...existing.filter((item) => item.titleSlug !== problem.titleSlug),
-      ].slice(0, RECENT_LIMIT);
-      await this.cache.set(RECENT_KEY, next);
-    });
-  }
-
-  public async getRecent(): Promise<readonly RecentProblem[]> {
-    const recent = await this.cache.get<readonly RecentProblem[]>(RECENT_KEY) ?? [];
-    return this.withStatuses(recent);
-  }
-
   public clearProblemLists(): Promise<void> {
     return this.serializeMutation(async () => {
       await Promise.all([
@@ -175,15 +142,7 @@ export class ProblemCache {
 
   public clearAll(): Promise<void> {
     this.userDataGeneration += 1;
-    return this.serializeMutation(async () => {
-      await Promise.all([
-        this.cache.delete(INDEX_KEY),
-        this.cache.clear(SEARCH_PREFIX),
-        this.cache.clear(DETAIL_PREFIX),
-        this.cache.delete(RECENT_KEY),
-        this.cache.delete(USER_STATUSES_KEY),
-      ]);
-    });
+    return this.serializeMutation(() => this.cache.clear("problem."));
   }
 
   private async captureStatusesUnqueued(

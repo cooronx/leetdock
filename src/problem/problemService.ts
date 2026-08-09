@@ -6,7 +6,7 @@ import type {
   ProblemSearchPage,
   ProblemSummary,
 } from "../leetcode/types";
-import { ProblemCache, type RecentProblem } from "./problemCache";
+import { ProblemCache } from "./problemCache";
 
 const MAX_SEARCH_PAGES = 3;
 
@@ -129,7 +129,6 @@ export class ProblemService {
       detail = await this.client.getProblem(normalized);
       await this.cache.setDetail(detail, userDataGeneration);
     }
-    await this.cache.addRecent(detail, userDataGeneration);
     this.assertCurrentGeneration(userDataGeneration);
     return detail;
   }
@@ -145,10 +144,6 @@ export class ProblemService {
     await this.cache.clearProblemLists();
     await this.cache.setIndex(index, userDataGeneration);
     this.assertCurrentGeneration(userDataGeneration);
-  }
-
-  public async getRecent(): Promise<readonly RecentProblem[]> {
-    return this.cache.getRecent();
   }
 
   public async clearCache(): Promise<void> {

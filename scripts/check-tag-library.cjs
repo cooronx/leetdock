@@ -210,7 +210,6 @@ async function checkExplorer() {
       snapshot: { status: "signed-out" },
       onDidChange: () => ({ dispose() {} }),
     },
-    { getRecent: async () => [] },
     { snapshot: dailyState, load: async () => dailyState, markCompleted: () => false },
     { reset() {} },
     { reset() {} },

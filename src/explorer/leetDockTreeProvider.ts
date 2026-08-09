@@ -17,8 +17,6 @@ import type {
   ProblemSummary,
   ProblemTag,
 } from "../leetcode/types";
-import type { RecentProblem } from "../problem/problemCache";
-import type { ProblemService } from "../problem/problemService";
 import type {
   ProblemListDetailState,
   ProblemListService,
@@ -137,9 +135,7 @@ export type LeetDockNode =
     readonly problem: CompanyQuestion;
   }
   | { readonly kind: "company-more"; readonly summary: CompanySummary }
-  | { readonly kind: "search" }
-  | { readonly kind: "recent" }
-  | { readonly kind: "problem"; readonly problem: RecentProblem };
+  | { readonly kind: "search" };
 
 export class LeetDockTreeProvider
   implements vscode.TreeDataProvider<LeetDockNode>, vscode.Disposable {
@@ -163,7 +159,6 @@ export class LeetDockTreeProvider
 
   public constructor(
     private readonly auth: AuthService,
-    private readonly problems: ProblemService,
     private readonly daily: DailyChallengeService,
     private readonly problemLists: ProblemListService,
     private readonly companies: CompanyService,
@@ -596,18 +591,6 @@ export class LeetDockTreeProvider
         item.contextValue = "leetdock.search";
         return item;
       }
-      case "recent": {
-        const item = new vscode.TreeItem(
-          "最近打开",
-          vscode.TreeItemCollapsibleState.Expanded,
-        );
-        item.id = "leetdock.recent";
-        item.iconPath = new vscode.ThemeIcon("history");
-        item.contextValue = "leetdock.recent";
-        return item;
-      }
-      case "problem":
-        return problemItem(element.problem);
     }
   }
 
@@ -621,7 +604,6 @@ export class LeetDockTreeProvider
         { kind: "daily" },
         { kind: "library" },
         { kind: "my-lists" },
-        { kind: "recent" },
         { kind: "account" },
       ];
     }
@@ -649,13 +631,7 @@ export class LeetDockTreeProvider
     if (element.kind === "company") {
       return this.companyChildren(element.summary);
     }
-    if (element.kind !== "recent") {
-      return [];
-    }
-    return (await this.problems.getRecent()).map((problem) => ({
-      kind: "problem" as const,
-      problem,
-    }));
+    return [];
   }
 
   public getParent(element: LeetDockNode): LeetDockNode | undefined {
@@ -1599,26 +1575,6 @@ function accountIcon(snapshot: AuthSnapshot): string {
     case "verifying":
       return "sync";
   }
-}
-
-function problemItem(problem: RecentProblem): vscode.TreeItem {
-  const item = new vscode.TreeItem(
-    `${problem.frontendId}. ${displayTitle(problem)}`,
-    vscode.TreeItemCollapsibleState.None,
-  );
-  item.id = `leetdock.problem.${problem.titleSlug}`;
-  item.description = [difficultyLabel(problem), statusLabel(problem)]
-    .filter((part) => part.length > 0)
-    .join(" · ");
-  item.tooltip = `${problem.title}\nhttps://leetcode.cn/problems/${problem.titleSlug}/`;
-  item.iconPath = new vscode.ThemeIcon(problemIcon(problem));
-  item.command = {
-    command: "leetdock.openProblem",
-    title: "打开题目",
-    arguments: [problem.titleSlug],
-  };
-  item.contextValue = "leetdock.problem";
-  return item;
 }
 
 function displayTitle(problem: ProblemSummary): string {
