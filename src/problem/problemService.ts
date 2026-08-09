@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { DebugProblemSpec } from "../debug/problemSpec";
 import { LeetCodeClient } from "../leetcode/client";
 import { LeetCodeError } from "../leetcode/errors";
 import type {
@@ -136,6 +137,29 @@ export class ProblemService {
   public async refreshProblem(titleSlug: string): Promise<ProblemDetail> {
     await this.cache.deleteDetail(titleSlug);
     return this.openProblem(titleSlug, true);
+  }
+
+  public async getDebugProblemSpec(titleSlug: string): Promise<DebugProblemSpec> {
+    const normalized = titleSlug.trim();
+    if (normalized.length === 0) {
+      throw new LeetCodeError("not-found", "Problem slug is empty.");
+    }
+    const userDataGeneration = this.cache.captureUserDataGeneration();
+    const cached = await this.cache.getDebugProblemSpec(normalized);
+    if (cached !== undefined) {
+      this.assertCurrentGeneration(userDataGeneration);
+      return cached;
+    }
+
+    const detail = await this.openProblem(normalized, true);
+    if (detail.debugProblemSpec === undefined) {
+      throw new LeetCodeError(
+        "invalid-response",
+        "Problem debug metadata was missing.",
+      );
+    }
+    this.assertCurrentGeneration(userDataGeneration);
+    return detail.debugProblemSpec;
   }
 
   public async refreshProblemList(): Promise<void> {

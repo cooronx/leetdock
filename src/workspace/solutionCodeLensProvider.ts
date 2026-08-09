@@ -32,6 +32,15 @@ export class SolutionCodeLensProvider implements vscode.CodeLensProvider {
     }
 
     return [
+      ...(metadata.language === "cpp"
+        ? [
+            new vscode.CodeLens(range, {
+              title: "$(debug-alt) 调试/Debug",
+              command: "leetdock.debugSolution",
+              arguments: [document.uri],
+            }),
+          ]
+        : []),
       new vscode.CodeLens(range, {
         title: "$(beaker) 测试",
         command: "leetdock.testSolution",

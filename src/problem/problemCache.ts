@@ -1,3 +1,7 @@
+import {
+  isDebugProblemSpec,
+  type DebugProblemSpec,
+} from "../debug/problemSpec";
 import type {
   ProblemDetail,
   ProblemSearchPage,
@@ -14,6 +18,7 @@ const INDEX_KEY = "problem.index";
 const USER_STATUSES_KEY = "problem.userStatuses";
 const SEARCH_PREFIX = "problem.search.";
 const DETAIL_PREFIX = "problem.detail.";
+const DEBUG_SPEC_PREFIX = "problem.debugSpec.";
 
 type StoredStatus = Exclude<ProblemStatus, null>;
 type UserStatuses = Readonly<Record<string, StoredStatus>>;
@@ -96,6 +101,21 @@ export class ProblemCache {
     return withStatus;
   }
 
+  public async getDebugProblemSpec(
+    titleSlug: string,
+  ): Promise<DebugProblemSpec | undefined> {
+    const key = `${DEBUG_SPEC_PREFIX}${normalizeSlug(titleSlug)}`;
+    const value = await this.cache.get<unknown>(key);
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!isDebugProblemSpec(value)) {
+      await this.serializeMutation(() => this.cache.delete(key));
+      return undefined;
+    }
+    return value;
+  }
+
   public setDetail(
     detail: ProblemDetail,
     generation: number,
@@ -107,21 +127,37 @@ export class ProblemCache {
       await this.captureStatusesUnqueued([detail], generation);
       if (detail.paidOnly) {
         // Paid content is account-scoped and must never survive a login boundary.
-        await this.cache.delete(`${DETAIL_PREFIX}${normalizeSlug(detail.titleSlug)}`);
+        await Promise.all([
+          this.cache.delete(`${DETAIL_PREFIX}${normalizeSlug(detail.titleSlug)}`),
+          this.cache.delete(`${DEBUG_SPEC_PREFIX}${normalizeSlug(detail.titleSlug)}`),
+        ]);
         return;
       }
-      await this.cache.set(
-        `${DETAIL_PREFIX}${normalizeSlug(detail.titleSlug)}`,
-        stripStatus(detail),
-        DETAIL_TTL_MS,
-      );
+      await Promise.all([
+        this.cache.set(
+          `${DETAIL_PREFIX}${normalizeSlug(detail.titleSlug)}`,
+          stripStatus(detail),
+          DETAIL_TTL_MS,
+        ),
+        ...(detail.debugProblemSpec === undefined
+          ? []
+          : [
+              this.cache.set(
+                `${DEBUG_SPEC_PREFIX}${normalizeSlug(detail.titleSlug)}`,
+                detail.debugProblemSpec,
+              ),
+            ]),
+      ]);
     });
   }
 
   public deleteDetail(titleSlug: string): Promise<void> {
-    return this.serializeMutation(() =>
-      this.cache.delete(`${DETAIL_PREFIX}${normalizeSlug(titleSlug)}`)
-    );
+    return this.serializeMutation(async () => {
+      await Promise.all([
+        this.cache.delete(`${DETAIL_PREFIX}${normalizeSlug(titleSlug)}`),
+        this.cache.delete(`${DEBUG_SPEC_PREFIX}${normalizeSlug(titleSlug)}`),
+      ]);
+    });
   }
 
   public clearProblemLists(): Promise<void> {

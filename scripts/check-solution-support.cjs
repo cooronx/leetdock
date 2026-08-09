@@ -207,6 +207,66 @@ async function checkJudgeRequests() {
   );
 }
 
+async function checkProblemDebugMetadata() {
+  let requestBody;
+  const client = new LeetCodeClient(
+    { getCookie: async () => undefined },
+    {
+      fetchImplementation: async (_url, init) => {
+        requestBody = JSON.parse(init.body);
+        return new Response(JSON.stringify({
+          data: {
+            question: {
+              questionId: "1",
+              questionFrontendId: "1",
+              title: "Two Sum",
+              translatedTitle: "两数之和",
+              titleSlug: "two-sum",
+              content: "",
+              translatedContent: "",
+              difficulty: "Easy",
+              topicTags: [],
+              codeSnippets: [
+                {
+                  lang: "C++",
+                  langSlug: "cpp",
+                  code: "class Solution { public: vector<int> twoSum(vector<int>& nums, int target); };",
+                },
+              ],
+              exampleTestcases: "[2,7,11,15]\n9",
+              sampleTestCase: "[2,7,11,15]\n9",
+              metaData: JSON.stringify({
+                name: "twoSum",
+                params: [
+                  { name: "nums", type: "integer[]" },
+                  { name: "target", type: "integer" },
+                ],
+                return: { type: "integer[]" },
+                manual: false,
+              }),
+              hints: [],
+              isPaidOnly: false,
+              status: null,
+            },
+          },
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      maxRetries: 0,
+      minRequestIntervalMs: 0,
+    },
+  );
+
+  const problem = await client.getProblem("two-sum");
+  assert.equal(requestBody.operationName, "QuestionData");
+  assert.match(requestBody.query, /\bmetaData\b/);
+  assert.equal(problem.debugProblemSpec.kind, "supported");
+  assert.equal(problem.debugProblemSpec.methodName, "twoSum");
+  assert.equal(problem.debugProblemSpec.parameters.length, 2);
+}
+
 async function checkBusyReleaseDoesNotWaitForNotification() {
   const source = `// @leetdock
 // id: 1
@@ -290,6 +350,7 @@ class Solution {};
 
 Promise.all([
   checkJudgeRequests(),
+  checkProblemDebugMetadata(),
   checkBusyReleaseDoesNotWaitForNotification(),
 ]).then(
   () => console.log("LeetDock solution test/submit support checks passed."),

@@ -76,6 +76,12 @@
         "category": "LeetDock"
       },
       {
+        "command": "leetdock.debugSolution",
+        "title": "调试/Debug",
+        "category": "LeetDock",
+        "enablement": "resourceFilename == solution.cpp"
+      },
+      {
         "command": "leetdock.testSolution",
         "title": "Test Solution",
         "category": "LeetDock",
@@ -187,14 +193,19 @@
       ],
       "explorer/context": [
         {
+          "command": "leetdock.debugSolution",
+          "when": "resourceFilename == solution.cpp",
+          "group": "leetdock@1"
+        },
+        {
           "command": "leetdock.testSolution",
           "when": "resourceFilename =~ /^solution\\.(cpp|rs|py|java|ts)$/",
-          "group": "leetdock@1"
+          "group": "leetdock@2"
         },
         {
           "command": "leetdock.submitSolution",
           "when": "resourceFilename =~ /^solution\\.(cpp|rs|py|java|ts)$/",
-          "group": "leetdock@2"
+          "group": "leetdock@3"
         }
       ],
       "editor/context": [
@@ -206,12 +217,17 @@
       ],
       "leetdock.solutionActions": [
         {
-          "command": "leetdock.testSolution",
+          "command": "leetdock.debugSolution",
+          "when": "resourceFilename == solution.cpp",
           "group": "leetdock@1"
         },
         {
-          "command": "leetdock.submitSolution",
+          "command": "leetdock.testSolution",
           "group": "leetdock@2"
+        },
+        {
+          "command": "leetdock.submitSolution",
+          "group": "leetdock@3"
         }
       ]
     },
@@ -242,6 +258,18 @@
           ],
           "description": "生成 LeetDock 代码文件时使用的默认语言。",
           "scope": "window"
+        },
+        "leetdock.debug.cpp.compilerPath": {
+          "type": "string",
+          "default": "g++",
+          "description": "本地调试 C++ solution.cpp 时使用的 g++ 可执行文件或绝对路径。",
+          "scope": "resource"
+        },
+        "leetdock.debug.cpp.debuggerPath": {
+          "type": "string",
+          "default": "gdb",
+          "description": "本地调试 C++ solution.cpp 时使用的 gdb 可执行文件或绝对路径。",
+          "scope": "resource"
         }
       }
     }
@@ -249,9 +277,10 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
-    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:problem-renderer && npm run check:daily-challenge && npm run check:problem-lists && npm run check:tag-library && npm run check:company-library",
+    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:debug-support && npm run check:problem-renderer && npm run check:daily-challenge && npm run check:problem-lists && npm run check:tag-library && npm run check:company-library",
     "check:extension-host": "node scripts/check-extension-host.cjs",
     "check:solution-support": "node scripts/check-solution-support.cjs",
+    "check:debug-support": "node scripts/check-debug-support.cjs",
     "check:problem-renderer": "node scripts/check-problem-renderer.cjs",
     "check:daily-challenge": "node scripts/check-daily-challenge.cjs",
     "check:problem-lists": "node scripts/check-problem-lists.cjs",

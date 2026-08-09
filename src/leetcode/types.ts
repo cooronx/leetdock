@@ -1,3 +1,5 @@
+import type { DebugProblemSpec } from "../debug/problemSpec";
+
 export type Difficulty = "Easy" | "Medium" | "Hard";
 
 export type ProblemStatus = "AC" | "TRIED" | null;
@@ -40,6 +42,8 @@ export interface ProblemDetail extends ProblemSummary {
   readonly codeSnippets: readonly CodeSnippet[];
   readonly exampleTestcases?: string;
   readonly sampleTestCase?: string;
+  /** Normalized local-debug metadata. Missing on details cached by older versions. */
+  readonly debugProblemSpec?: DebugProblemSpec;
   readonly hints: readonly string[];
 }
 

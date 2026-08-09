@@ -15,7 +15,7 @@
       return;
     }
     runButton.disabled = true;
-    runButton.textContent = "运行中…";
+    runButton.textContent = runButton.dataset.pendingLabel || "运行中…";
     vscode.postMessage({ command: "runCustom", input: value });
   });
 })();

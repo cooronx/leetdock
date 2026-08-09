@@ -7,23 +7,31 @@ interface ExecutionResources {
   readonly js: string;
 }
 
+export type ExecutionProblemIdentity = Pick<
+  ProblemDetail,
+  "frontendId" | "title" | "translatedTitle"
+>;
+
 export function renderExecutionInputHtml(
   webview: vscode.Webview,
   extensionUri: vscode.Uri,
-  problem: ProblemDetail,
+  problem: ExecutionProblemIdentity,
   input: string,
+  action: "test" | "debug" = "test",
 ): string {
+  const debugging = action === "debug";
+  const actionTitle = debugging ? "自定义调试" : "自定义测试";
   return documentShell(
     webview,
     extensionUri,
-    `${problem.frontendId}. ${displayTitle(problem)} · 自定义测试`,
+    `${problem.frontendId}. ${displayTitle(problem)} · ${actionTitle}`,
     `<main class="execution-shell">
-      ${heading(problem, "自定义测试", "编辑测试用例后运行")}
+      ${heading(problem, actionTitle, debugging ? "编辑一组输入后启动本地调试" : "编辑测试用例后运行")}
       <section class="card">
-        <label for="test-input">测试输入</label>
+        <label for="test-input">${debugging ? "调试输入" : "测试输入"}</label>
         <textarea id="test-input" spellcheck="false" autofocus>${escapeHtml(input)}</textarea>
-        <p class="hint">多参数请按照 LeetCode 格式逐行填写。</p>
-        <button id="run-custom" class="primary" type="button">运行测试</button>
+        <p class="hint">每个参数一行，请使用严格的 LeetCode JSON 格式。</p>
+        <button id="run-custom" class="primary" type="button" data-pending-label="${debugging ? "启动中…" : "运行中…"}">${debugging ? "启动调试" : "运行测试"}</button>
       </section>
     </main>`,
   );
@@ -147,7 +155,11 @@ function documentShell(
 </html>`;
 }
 
-function heading(problem: ProblemDetail, title: string, subtitle: string): string {
+function heading(
+  problem: ExecutionProblemIdentity,
+  title: string,
+  subtitle: string,
+): string {
   return `<header>
     <p class="kicker">LeetDock · ${escapeHtml(problem.frontendId)}</p>
     <h1>${escapeHtml(title)}</h1>
@@ -179,7 +191,7 @@ function resourceUris(
   return { css: resource("execution.css"), js: resource("execution.js") };
 }
 
-function displayTitle(problem: ProblemDetail): string {
+function displayTitle(problem: ExecutionProblemIdentity): string {
   return problem.translatedTitle?.trim() || problem.title;
 }
 

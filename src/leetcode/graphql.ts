@@ -58,6 +58,7 @@ export const PROBLEM_DETAIL_QUERY = /* GraphQL */ `
       }
       exampleTestcases
       sampleTestCase
+      metaData
       hints
       isPaidOnly
       status

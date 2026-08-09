@@ -9,6 +9,7 @@ import {
 } from "./commands/problemCommands";
 import { SolutionExecutionService } from "./commands/solutionCommands";
 import { CompanyService } from "./company/companyService";
+import { SolutionDebugModule } from "./debug/solutionDebugModule";
 import { DailyChallengeCache } from "./daily/dailyChallengeCache";
 import { DailyChallengeService } from "./daily/dailyChallengeService";
 import { LeetDockTreeProvider } from "./explorer/leetDockTreeProvider";
@@ -97,6 +98,11 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     },
   );
+  const solutionDebugger = new SolutionDebugModule(
+    context,
+    problems,
+    executionPanels,
+  );
   const solutionCodeLens = new SolutionCodeLensProvider(executions);
   const treeView = vscode.window.createTreeView("leetdock.explorer", {
     treeDataProvider: explorer,
@@ -108,6 +114,7 @@ export function activate(context: vscode.ExtensionContext): void {
     panels,
     executionPanels,
     executions,
+    solutionDebugger,
     explorer,
     treeView,
     treeView.onDidChangeVisibility(({ visible }) => {
@@ -375,6 +382,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("leetdock.testSolution", (input?: unknown) =>
       runWithErrorMessage(() => executions.test(input)),
+    ),
+    vscode.commands.registerCommand("leetdock.debugSolution", (input?: unknown) =>
+      runWithErrorMessage(() => solutionDebugger.debug(input)),
     ),
     vscode.commands.registerCommand("leetdock.submitSolution", (input?: unknown) =>
       runWithErrorMessage(() => executions.submit(input)),

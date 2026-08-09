@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { createDebugProblemSpec } from "../debug/problemSpec";
 import {
   CredentialStore,
   normalizeLeetCodeCookie,
@@ -134,6 +135,7 @@ interface RawProblemDetail {
   readonly codeSnippets?: readonly RawCodeSnippet[] | null;
   readonly exampleTestcases?: unknown;
   readonly sampleTestCase?: unknown;
+  readonly metaData?: unknown;
   readonly hints?: readonly unknown[] | null;
   readonly isPaidOnly?: unknown;
   readonly status?: unknown;
@@ -1279,6 +1281,18 @@ function mapProblemDetail(raw: RawProblemDetail): ProblemDetail {
     languageSlug: requiredString(snippet.langSlug, "codeSnippets.langSlug"),
     code: requiredString(snippet.code, "codeSnippets.code"),
   }));
+  const exampleTestcases = asString(raw.exampleTestcases);
+  const sampleTestCase = asString(raw.sampleTestCase);
+  const metadata = asString(raw.metaData);
+  const cppSnippet = codeSnippets.find((snippet) =>
+    snippet.languageSlug.trim().toLocaleLowerCase("en-US") === "cpp"
+  )?.code;
+  const debugProblemSpec = createDebugProblemSpec({
+    ...(metadata === undefined ? {} : { metadata }),
+    ...(cppSnippet === undefined ? {} : { cppSnippet }),
+    ...(exampleTestcases === undefined ? {} : { exampleTestcases }),
+    ...(sampleTestCase === undefined ? {} : { sampleTestCase }),
+  });
 
   return {
     internalId: requiredString(raw.questionId, "questionId"),
@@ -1297,12 +1311,9 @@ function mapProblemDetail(raw: RawProblemDetail): ProblemDetail {
     status: mapStatus(raw.status),
     tags,
     codeSnippets,
-    ...(asString(raw.exampleTestcases) === undefined
-      ? {}
-      : { exampleTestcases: asString(raw.exampleTestcases) }),
-    ...(asString(raw.sampleTestCase) === undefined
-      ? {}
-      : { sampleTestCase: asString(raw.sampleTestCase) }),
+    ...(exampleTestcases === undefined ? {} : { exampleTestcases }),
+    ...(sampleTestCase === undefined ? {} : { sampleTestCase }),
+    debugProblemSpec,
     hints: (raw.hints ?? []).filter((hint): hint is string => typeof hint === "string"),
   };
 }

@@ -10,6 +10,7 @@ LeetDock 是一个通过 [leetcode.cn](https://leetcode.cn) 获取题目内容�
 - 中文题面优先、英文回退，支持标签、难度、状态、提示和 KaTeX 公式。
 - C++、Rust、Python、Java、TypeScript 本地代码文件。
 - 在 `solution.*` 编辑器中直接测试样例或提交代码，并在结果页查看判题详情。
+- 在 Linux 上为普通 C++ 方法题生成本地入口，并通过 GDB 进行断点、单步和变量调试。
 - 侧栏显示中国站今日「每日 1 题」、官方连续完成天数和当日完成状态。
 - 登录后在侧栏读取账号创建和收藏的普通题单，按力扣顺序分页浏览题目与独立进度。
 - 所有用户都可在侧栏通过“题库 → 标签/tag”搜索标签，并按标签分页浏览题目。
@@ -24,6 +25,7 @@ LeetDock 是一个通过 [leetcode.cn](https://leetcode.cn) 获取题目内容�
 3. 运行 `LeetDock: Open Problem`，输入例如 `1`、`两数之和`、`two-sum` 或完整题目 URL。
 4. 在题目页面点击“打开代码”。首次使用时选择默认语言和代码根目录。
 5. 在代码文件顶部点击“测试”或“提交”；测试支持题目默认样例和自定义多行输入。
+6. Linux 用户可在 `solution.cpp` 顶部点击“调试/Debug”，选择一个官方样例或自定义输入后启动本地 GDB 会话。
 
 侧栏中的“今日挑战”会按北京时间获取 `leetcode.cn` 当日题目。未登录也可以查看并打开题目；登录后会显示力扣官方的连续完成天数和今日完成状态。提交今日题目并通过后，完成状态会立即更新，连续天数仍以服务端返回值为准。
 
@@ -62,10 +64,17 @@ leetdock/
 - `Search Tag` / `Refresh Tags` / `Refresh Tag Questions`
 - `Search Company` / `Refresh Companies` / `Refresh Company Questions`
 - `Open Code` / `Switch Language`
+- `调试/Debug`（仅 `solution.cpp`）
 - `Test Solution` / `Submit Solution`
 - `Clear Cache`
 
-`leetdock.defaultLanguage` 保存默认语言。侧栏的刷新按钮会同时刷新题目列表、每日挑战、标签题库、登录账号的题单总览，以及 Plus 账号的公司目录。`Clear Cache` 会清理题目、每日挑战和最近记录缓存，并清空当前会话的标签与公司题库数据，但不会退出登录、修改默认语言、删除代码文件或重置代码目录；“我的题单”、标签题库和公司题库本身不写入持久缓存。
+`leetdock.defaultLanguage` 保存默认语言。`leetdock.debug.cpp.compilerPath` 和 `leetdock.debug.cpp.debuggerPath` 分别指定本地调试使用的 `g++` 与 `gdb`，默认从 `PATH` 查找。侧栏的刷新按钮会同时刷新题目列表、每日挑战、标签题库、登录账号的题单总览，以及 Plus 账号的公司目录。`Clear Cache` 会清理题目、调试签名、每日挑战和最近记录缓存，并清空当前会话的标签与公司题库数据，但不会退出登录、修改默认语言、删除代码文件或重置代码目录；“我的题单”、标签题库和公司题库本身不写入持久缓存。
+
+## C++ 本地调试
+
+首版本地调试仅支持 Linux，需要安装 Microsoft C/C++ 扩展、`g++` 和 `gdb`。LeetDock 会自动保存当前 `solution.cpp`，在扩展内部目录生成临时 `main.cpp`，以 `-std=c++17 -O0 -g3` 编译并启动 `cppdbg`；不会修改用户源码、题目目录、`launch.json` 或 `tasks.json`。
+
+当前支持普通 `class Solution` 单方法题，参数和返回值可使用 `integer`、`long`、`double`、`boolean`、`string`、`character` 及其一维或二维数组，也支持返回 `void` 并修改入参。链表、树、图、设计题和交互题会显示明确的不支持原因。自定义输入严格采用每个参数一行的 LeetCode JSON 格式。
 
 ## 开发与静态检查
 
@@ -113,3 +122,6 @@ code --extensionDevelopmentPath=.
 25. 使用 Plus 账号展开“题库 → 公司”，确认公司列表按名称排列，首项为“搜索公司…”，普通账号则显示升级提示。
 26. 搜索并选择一个公司，确认侧栏定位并展开该公司，展示官方默认时间范围的前 50 道题；悬浮题目可查看出题频率。
 27. 点击“加载更多”确认题目不重复；打开公司题目并提交通过后，已加载公司列表中的完成状态应立即更新。
+28. 在 Linux 上安装 Microsoft C/C++ 扩展、`g++` 和 `gdb`；打开“两数之和”的 `solution.cpp`，设置断点并点击“调试/Debug”，确认断点命中原始源码且可单步和查看变量。
+29. 分别选择官方样例和自定义输入，确认一次会话只运行一个用例；测试 `void` 修改数组题，确认结束时输出修改后的参数。
+30. 制造 C++ 编译错误，确认不会启动 GDB，完整错误出现在 `LeetDock Debug` 输出频道，且题目目录和 `.vscode` 配置均未产生调试文件。

@@ -6,6 +6,7 @@ import {
   renderExecutionInputHtml,
   renderExecutionPendingHtml,
   renderExecutionResultHtml,
+  type ExecutionProblemIdentity,
 } from "./executionRenderer";
 
 interface CustomInputMessage {
@@ -14,8 +15,10 @@ interface CustomInputMessage {
 }
 
 interface PanelContext {
-  problem: ProblemDetail;
-  action: JudgeAction;
+  problem: ExecutionProblemIdentity;
+  judgeProblem?: ProblemDetail;
+  action: JudgeAction | "debug";
+  input?: string;
   runCustom?: (input: string) => Promise<void>;
 }
 
@@ -26,25 +29,33 @@ export class ExecutionPanelManager implements vscode.Disposable {
   public constructor(private readonly extensionUri: vscode.Uri) {}
 
   public showCustomInput(
-    problem: ProblemDetail,
+    problem: ExecutionProblemIdentity,
     input: string,
     runCustom: (input: string) => Promise<void>,
+    action: "test" | "debug" = "test",
   ): void {
     const panel = this.getOrCreatePanel();
-    this.context = { problem, action: "test", runCustom };
-    panel.title = `测试 · ${problem.frontendId}`;
+    this.context = {
+      problem,
+      ...(action === "test" ? { judgeProblem: problem as ProblemDetail } : {}),
+      action,
+      input,
+      runCustom,
+    };
+    panel.title = `${action === "debug" ? "调试" : "测试"} · ${problem.frontendId}`;
     panel.webview.html = renderExecutionInputHtml(
       panel.webview,
       this.extensionUri,
       problem,
       input,
+      action,
     );
     panel.reveal(vscode.ViewColumn.Beside, false);
   }
 
   public showPending(problem: ProblemDetail, action: JudgeAction): void {
     const panel = this.getOrCreatePanel();
-    this.context = { problem, action };
+    this.context = { problem, judgeProblem: problem, action };
     panel.title = `${action === "test" ? "测试" : "提交"} · ${problem.frontendId}`;
     panel.webview.html = renderExecutionPendingHtml(
       panel.webview,
@@ -57,7 +68,7 @@ export class ExecutionPanelManager implements vscode.Disposable {
 
   public showResult(problem: ProblemDetail, result: JudgeResult): void {
     const panel = this.getOrCreatePanel();
-    this.context = { problem, action: result.action };
+    this.context = { problem, judgeProblem: problem, action: result.action };
     panel.title = `${result.action === "test" ? "测试" : "提交"} · ${problem.frontendId}`;
     panel.webview.html = renderExecutionResultHtml(
       panel.webview,
@@ -72,7 +83,7 @@ export class ExecutionPanelManager implements vscode.Disposable {
     const message = error instanceof Error && !("kind" in error)
       ? error.message
       : toUserMessage(error);
-    this.context = { problem, action };
+    this.context = { problem, judgeProblem: problem, action };
     panel.title = `${action === "test" ? "测试" : "提交"}失败 · ${problem.frontendId}`;
     panel.webview.html = renderExecutionErrorHtml(
       panel.webview,
@@ -122,17 +133,28 @@ export class ExecutionPanelManager implements vscode.Disposable {
     }
     const input = message.input.trim();
     if (input.length === 0) {
-      await vscode.window.showWarningMessage("测试用例不能为空。");
+      await vscode.window.showWarningMessage(
+        this.context.action === "debug" ? "调试输入不能为空。" : "测试用例不能为空。",
+      );
       return;
     }
-    const runCustom = this.context.runCustom;
+    const context = this.context;
+    const runCustom = context.runCustom;
+    if (runCustom === undefined) {
+      return;
+    }
     this.context.runCustom = undefined;
     try {
       await runCustom(input);
     } catch (error) {
-      const context = this.context;
-      if (context !== undefined) {
-        this.showError(context.problem, context.action, error);
+      if (context.action === "debug") {
+        this.showCustomInput(context.problem, input, runCustom, "debug");
+      }
+      if (
+        context.judgeProblem !== undefined &&
+        context.action !== "debug"
+      ) {
+        this.showError(context.judgeProblem, context.action, error);
       }
       const message = error instanceof Error && !("kind" in error)
         ? error.message
