@@ -8,6 +8,7 @@ import {
   parseSolutionDocument,
   type SolutionMetadata,
 } from "../workspace/solutionDocument";
+import { isNativeAbsolutePath } from "../workspace/nativePath";
 import {
   parseDebugTestCase,
   renderCppDebugProgram,
@@ -166,6 +167,12 @@ export class SolutionDebugModule implements vscode.Disposable {
         await vscode.window.showErrorMessage("本地 C++ 调试仅支持文件系统中的 solution.cpp。");
         return false;
       }
+      if (!isNativeAbsolutePath(uri.fsPath)) {
+        await vscode.window.showErrorMessage(
+          "当前 solution.cpp 使用了其他操作系统的路径。请重新打开题目代码并选择本机代码目录。",
+        );
+        return false;
+      }
       const testCase = parseDebugTestCase(rawInput, spec.parameters);
       const document = await vscode.workspace.openTextDocument(uri);
       if (document.isDirty && !(await document.save())) {
@@ -186,8 +193,10 @@ export class SolutionDebugModule implements vscode.Disposable {
         );
         return false;
       }
-      if (process.platform !== "linux") {
-        await vscode.window.showErrorMessage("首版 C++ 调试功能仅支持 Linux。");
+      if (process.platform !== "linux" && process.platform !== "win32") {
+        await vscode.window.showErrorMessage(
+          "本地 C++ 调试目前仅支持 Linux 和 Windows。",
+        );
         return false;
       }
       if (!(await this.ensureCppTools())) {
@@ -216,7 +225,10 @@ export class SolutionDebugModule implements vscode.Disposable {
       );
       let handedToDebugger = false;
       try {
-        const program = vscode.Uri.joinPath(artifact.directory, "program");
+        const program = vscode.Uri.joinPath(
+          artifact.directory,
+          process.platform === "win32" ? "program.exe" : "program",
+        );
         const source = vscode.Uri.joinPath(artifact.directory, "main.cpp");
         const compiled = await this.compile(
           compilerPath,
@@ -233,6 +245,7 @@ export class SolutionDebugModule implements vscode.Disposable {
           expectedMetadata.frontendId,
           artifact.token,
         );
+        const toolPath = windowsToolPath([compilerPath, debuggerPath]);
         const started = await vscode.debug.startDebugging(
           vscode.workspace.getWorkspaceFolder(uri),
           {
@@ -246,6 +259,9 @@ export class SolutionDebugModule implements vscode.Disposable {
             externalConsole: false,
             MIMode: "gdb",
             miDebuggerPath: debuggerPath,
+            ...(toolPath === undefined
+              ? {}
+              : { environment: [{ name: "PATH", value: toolPath }] }),
             setupCommands: [
               {
                 description: "Enable pretty-printing for gdb",
@@ -361,6 +377,7 @@ export class SolutionDebugModule implements vscode.Disposable {
       "-std=c++17",
       "-O0",
       "-g3",
+      ...(process.platform === "win32" ? ["-static"] : []),
       sourcePath,
       "-o",
       programPath,
@@ -465,8 +482,12 @@ function runProcess(
   cwd?: string,
 ): Promise<ProcessResult> {
   return new Promise((resolve, reject) => {
+    const toolPath = windowsToolPath([command]);
     const child = spawn(command, args, {
       ...(cwd === undefined ? {} : { cwd }),
+      ...(toolPath === undefined
+        ? {}
+        : { env: environmentWithPath(toolPath) }),
       shell: false,
       windowsHide: true,
     });
@@ -492,6 +513,45 @@ function runProcess(
       }
     });
   });
+}
+
+function windowsToolPath(commands: readonly string[]): string | undefined {
+  if (process.platform !== "win32") {
+    return undefined;
+  }
+
+  const directories: string[] = [];
+  const seen = new Set<string>();
+  for (const command of commands) {
+    if (!path.win32.isAbsolute(command)) {
+      continue;
+    }
+    const directory = path.win32.dirname(command);
+    const key = directory.toLocaleLowerCase("en-US");
+    if (!seen.has(key)) {
+      seen.add(key);
+      directories.push(directory);
+    }
+  }
+  if (directories.length === 0) {
+    return undefined;
+  }
+
+  const inherited = process.env.Path ?? process.env.PATH;
+  return [...directories, inherited]
+    .filter((value): value is string => value !== undefined && value.length > 0)
+    .join(path.win32.delimiter);
+}
+
+function environmentWithPath(toolPath: string): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const key of Object.keys(environment)) {
+    if (key.toLocaleLowerCase("en-US") === "path") {
+      delete environment[key];
+    }
+  }
+  environment.PATH = toolPath;
+  return environment;
 }
 
 function isExecutableMissing(error: unknown): boolean {

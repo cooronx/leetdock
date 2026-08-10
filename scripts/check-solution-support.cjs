@@ -38,6 +38,9 @@ const {
   parseSolutionDocument,
 } = require("../dist/workspace/solutionDocument.js");
 const {
+  isNativeAbsolutePath,
+} = require("../dist/workspace/nativePath.js");
+const {
   isJudgePending,
   mapJudgeResult,
 } = require("../dist/leetcode/judgeResult.js");
@@ -69,6 +72,11 @@ assert.equal(
 );
 assert.equal(isSolutionFileName("solution.ts"), true);
 assert.equal(isSolutionFileName("main.cpp"), false);
+assert.equal(isNativeAbsolutePath("C:\\code\\solution.cpp", "win32"), true);
+assert.equal(isNativeAbsolutePath("\\\\server\\share\\solution.cpp", "win32"), true);
+assert.equal(isNativeAbsolutePath("/home/user/solution.cpp", "win32"), false);
+assert.equal(isNativeAbsolutePath("/home/user/solution.cpp", "linux"), true);
+assert.equal(isNativeAbsolutePath("C:\\code\\solution.cpp", "linux"), false);
 
 assert.equal(isJudgePending({ state: "PENDING" }), true);
 assert.equal(isJudgePending({ state: "SUCCESS" }), false);

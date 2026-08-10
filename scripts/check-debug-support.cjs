@@ -191,7 +191,7 @@ assert.ok(
   ),
 );
 
-if (process.platform === "linux" && compilerAvailable()) {
+if (["linux", "win32"].includes(process.platform) && compilerAvailable()) {
   compileAndRunSmokeTest(twoSumSpec, twoSumCase, `
 class Solution {
 public:
@@ -253,7 +253,10 @@ function compileAndRunSmokeTest(spec, testCase, solution, expectedOutput, symbol
   try {
     const solutionPath = path.join(directory, "solution.cpp");
     const mainPath = path.join(directory, "main.cpp");
-    const programPath = path.join(directory, "program");
+    const programPath = path.join(
+      directory,
+      process.platform === "win32" ? "program.exe" : "program",
+    );
     fs.writeFileSync(solutionPath, solution, "utf8");
     fs.writeFileSync(
       mainPath,
@@ -262,7 +265,15 @@ function compileAndRunSmokeTest(spec, testCase, solution, expectedOutput, symbol
     );
     const compiled = spawnSync(
       "g++",
-      ["-std=c++17", "-O0", "-g3", mainPath, "-o", programPath],
+      [
+        "-std=c++17",
+        "-O0",
+        "-g3",
+        ...(process.platform === "win32" ? ["-static"] : []),
+        mainPath,
+        "-o",
+        programPath,
+      ],
       { encoding: "utf8" },
     );
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);

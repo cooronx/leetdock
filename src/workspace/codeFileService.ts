@@ -9,6 +9,7 @@ import {
   type LanguageDefinition,
   type SupportedLanguage,
 } from "./languageService";
+import { isNativeAbsolutePath } from "./nativePath";
 
 export const SOLUTION_ROOT_STATE_KEY = "leetdock.solutionRoot";
 
@@ -123,7 +124,7 @@ export class CodeFileService {
     if (
       typeof storedPath === "string" &&
       storedPath.trim().length > 0 &&
-      path.isAbsolute(storedPath)
+      isNativeAbsolutePath(storedPath)
     ) {
       return vscode.Uri.file(storedPath);
     }
