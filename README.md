@@ -1,127 +1,113 @@
-# LeetDock
+<a id="readme-top"></a>
 
-LeetDock 是一个通过 [leetcode.cn](https://leetcode.cn) 获取题目内容的 Visual Studio Code 扩展。扩展 ID 为 `cooronx.leetdock`。
+[![contributors][contributors-shield]][contributors-url]
+[![fork][forks-shield]][forks-url]
+[![star][stars-shield]][stars-url]
+[![issue][issues-shield]][issues-url]
 
-第一阶段支持：
+<div align="center">
+  <img src="media/leetdock.png" alt="LeetDock" width="96" height="96" />
+  <h1>LeetDock</h1>
+  <p>
+    面向力扣中国站的 Visual Studio Code 刷题插件
+    <br />
+    <a href="https://github.com/cooronx/leetdock/issues">issues</a>
+  </p>
+</div>
 
-- 浏览器授权登录，Cookie 只保存在 VS Code SecretStorage。
-- 按题号、中文名、英文名、titleSlug 或中国站题目 URL 打开题目。
-- 每道题使用独立 Webview 页面；重复打开同一道题会复用原页面。
-- 中文题面优先、英文回退，支持标签、难度、状态、提示和 KaTeX 公式。
-- C++、Rust、Python、Java、TypeScript 本地代码文件。
-- 在 `solution.*` 编辑器中直接测试样例或提交代码，并在结果页查看判题详情。
-- 在 Linux 上为普通 C++ 方法题生成本地入口，并通过 GDB 进行断点、单步和变量调试。
-- 侧栏显示中国站今日「每日 1 题」、官方连续完成天数和当日完成状态。
-- 登录后在侧栏读取账号创建和收藏的普通题单，按力扣顺序分页浏览题目与独立进度。
-- 所有用户都可在侧栏通过“题库 → 标签/tag”搜索标签，并按标签分页浏览题目。
-- Plus 会员可在侧栏通过“题库 → 公司”浏览官方公司高频题，并搜索定位公司。
-- Activity Bar 中显示当前账号并提供题目搜索。
-- 题目列表、详情与搜索缓存，以及手动刷新和缓存清理。
+<details>
+  <summary>目录</summary>
+  <ol>
+    <li><a href="#关于-leetdock">关于 LeetDock</a></li>
+    <li><a href="#功能概览">功能概览</a></li>
+    <li><a href="#c-本地调试">C++ 本地调试</a></li>
+    <li><a href="#数据与隐私">数据与隐私</a></li>
+    <li><a href="#参与贡献">参与贡献</a></li>
+    <li><a href="#联系方式">联系方式</a></li>
+    <li><a href="#致谢">致谢</a></li>
+  </ol>
+</details>
 
-## 使用
+## 关于 LeetDock
 
-1. 在命令面板运行 `LeetDock: Sign In`，或点击状态栏/侧栏中的登录入口。
-2. 在浏览器完成 LeetDock 授权，返回 VS Code 后核对弹窗中的账号并确认。
-3. 运行 `LeetDock: Open Problem`，输入例如 `1`、`两数之和`、`two-sum` 或完整题目 URL。
-4. 在题目页面点击“打开代码”。首次使用时选择默认语言和代码根目录。
-5. 在代码文件顶部点击“测试”或“提交”；测试支持题目默认样例和自定义多行输入。
-6. Linux 用户可在 `solution.cpp` 顶部点击“调试/Debug”，选择一个官方样例或自定义输入后启动本地 GDB 会话。
+LeetDock 是一个连接 [力扣中国站](https://leetcode.cn) 的 vscode(cursor) 扩展，目标是在编辑器内提供从浏览题目、编写代码到测试、提交和调试的一体化刷题体验。
 
-侧栏中的“今日挑战”会按北京时间获取 `leetcode.cn` 当日题目。未登录也可以查看并打开题目；登录后会显示力扣官方的连续完成天数和今日完成状态。提交今日题目并通过后，完成状态会立即更新，连续天数仍以服务端返回值为准。
+> 主要是我自己在vscode中有刷题的需求，但是官方的插件很久都没更新过了。而且我想做我自己收藏的题单，官方插件也没有这个功能，于是自己做了一个这样的插件
 
-同一天网络不可用时，侧栏会保留最近一次成功获取的数据并标注“离线数据”。跨天后不会把昨天的题目继续显示成今日题目，可以展开错误项点击重试，或使用侧栏刷新按钮重新同步。
 
-“我的题单”只读取力扣账号中的普通题单，不会创建、编辑、删除或重排题单，也暂不显示智能题单。题单名称会先快速加载；首次展开某个题单时，再同步该题单的独立进度和前 50 道题，后续可点击“加载更多”。私有题单只保存在当前扩展会话的内存中，网络不可用时不会展示旧数据。
+<p align="right">（<a href="#readme-top">返回顶部</a>）</p>
 
-“题库 → 标签/tag”使用力扣中国站实时返回的完整标签目录，未登录也可浏览。标签按中文显示名称排列，“搜索标签…”支持中文名、英文名和 slug；首次展开标签时加载前 50 道题并显示题目总数，后续可继续分页。标签和已加载题目只缓存在当前扩展会话中；登录后会显示个人完成状态，在插件中提交通过后，所有已加载标签中的对应题目会立即更新。
+## 功能概览
 
-“题库 → 公司”使用力扣中国站实时返回的公司目录和该公司的官方默认时间范围，不内置静态题库。公司按名称排列，“搜索公司…”会定位并展开对应节点；首次展开时加载前 50 道题，后续可继续分页。题目按官方顺序展示，出题频率放在悬浮提示中。该内容遵循力扣 Plus 权限，未登录或普通账号会显示相应提示。
+- 超级简单的登录方式，自动跳转网页授权即可完成登录
+- 支持按题号、中文名、英文名、题目链接搜索并打开题目。
+- 使用独立题目页面美观的展示中文题面、难度、标签、状态、提示与 KaTeX 公式。
+- 语言支持： C++、Rust、Python、Java、TypeScript（持续更新中）。
+- 在vscode中测试样例或提交代码，并查看判题结果。
+- 支持使用自定义的样例进行测试以及本地调试
+- 支持在vscode中进行单步调试（暂时只支持C++）。
+- 在侧栏展示每日一题、连续完成天数、个人题单、标签题库与公司题库(公司题库需要plus会员)。
+- 支持题目数据缓存、手动刷新和缓存清理。
+- 持续更新，因为我自己也在使用，感觉也有很多欠缺的地方🤣
 
-如果首次选择代码目录时取消，LeetDock 会使用并记住系统用户目录下的默认位置：
+<p align="right">（<a href="#readme-top">返回顶部</a>）</p>
 
-- Linux/macOS：`$HOME/leetdock`
-- Windows：`%USERPROFILE%\leetdock`
+## 快速开始
 
-代码按题目分目录保存，例如：
+### 1. 登录力扣
 
-```text
-leetdock/
-└── 0001-two-sum/
-    ├── solution.cpp
-    └── solution.py
-```
+登录超级简单🌹
 
-已有文件只会重新打开，LeetDock 不会覆盖其中的修改。代码默认在题目页面旁边打开。
+安装并启用 LeetDock 后，在侧边栏中点击登录。插件会自动打开浏览器进行授权，授权完成后点击返回 VS Code 即可完成登录。
 
-## 命令与设置
+![登录力扣](resources/login.gif)
 
-主要命令都以 `LeetDock:` 开头：
+### 2. 浏览题目
 
-- `Sign In` / `Sign Out`
-- `Open Problem` / `Search Problem`
-- `Refresh Problem` / `Refresh LeetDock Data` / `Refresh Daily Challenge`
-- `Refresh My Problem Lists`
-- `Search Tag` / `Refresh Tags` / `Refresh Tag Questions`
-- `Search Company` / `Refresh Companies` / `Refresh Company Questions`
-- `Open Code` / `Switch Language`
-- `调试/Debug`（仅 `solution.cpp`）
-- `Test Solution` / `Submit Solution`
-- `Clear Cache`
+通过侧边栏搜索并打开题目，即可在独立页面中查看中文题面、示例、提示和相关标签。
 
-`leetdock.defaultLanguage` 保存默认语言。`leetdock.debug.cpp.compilerPath` 和 `leetdock.debug.cpp.debuggerPath` 分别指定本地调试使用的 `g++` 与 `gdb`，默认从 `PATH` 查找。侧栏的刷新按钮会同时刷新题目列表、每日挑战、标签题库、登录账号的题单总览，以及 Plus 账号的公司目录。`Clear Cache` 会清理题目、调试签名、每日挑战和最近记录缓存，并清空当前会话的标签与公司题库数据，但不会退出登录、修改默认语言、删除代码文件或重置代码目录；“我的题单”、标签题库和公司题库本身不写入持久缓存。
+![浏览题目](resources/image_webview.png)
 
-## C++ 本地调试
+### 3. 编写代码
 
-首版本地调试仅支持 Linux，需要安装 Microsoft C/C++ 扩展、`g++` 和 `gdb`。LeetDock 会自动保存当前 `solution.cpp`，在扩展内部目录生成临时 `main.cpp`，以 `-std=c++17 -O0 -g3` 编译并启动 `cppdbg`；不会修改用户源码、题目目录、`launch.json` 或 `tasks.json`。
+点击题目页面底部的“打开代码”，选择编程语言后即可生成对应的解题文件并开始编写代码。
 
-当前支持普通 `class Solution` 单方法题，参数和返回值可使用 `integer`、`long`、`double`、`boolean`、`string`、`character` 及其一维或二维数组，也支持返回 `void` 并修改入参。链表、树、图、设计题和交互题会显示明确的不支持原因。自定义输入严格采用每个参数一行的 LeetCode JSON 格式。
+![编写代码](resources/image_solution.png)
 
-## 开发与静态检查
+### 4. 测试与提交
 
-```shell
-npm install
-npm run check
-npm run compile
-node --check media/problem.js
-```
+在编辑器顶部或右键菜单中选择“测试”，输入自定义测试用例后即可直接运行；完成后也可以从相同位置提交代码。
 
-使用桌面版 VS Code 打开本目录，然后启动 Extension Development Host；也可以从本目录运行：
+![测试代码](resources/image_test.png)
 
-```shell
-code --extensionDevelopmentPath=.
-```
+<p align="right">（<a href="#readme-top">返回顶部</a>）</p>
 
-## 手工验收清单
 
-交互式登录和 Webview 需要桌面 VS Code 与浏览器，请依次验证：
+## 参与贡献
 
-1. 登录后确认回调弹窗显示正确账号，状态栏和侧栏显示用户名。
-2. 输入 `1`，确认打开 `1. 两数之和` 题目页面；再次打开题号 `1` 时复用同一页面。
-3. 打开另一道题，确认出现独立页面。
-4. 在题面点击“打开代码”，选择 C++ 和一个目录；确认生成 `0001-two-sum/solution.cpp`，题面仍保留且代码在旁边打开。
-5. 修改代码后再次执行“打开代码”，确认原文件内容不被覆盖。
-6. 切换到 Python，确认同一题目目录下生成并打开 `solution.py`。
-7. 重新启动 Extension Development Host，确认默认语言与代码根目录仍然有效。
-8. 检查 Activity Bar 的搜索；分别执行单题刷新、题目列表刷新和缓存清理。
-9. 退出登录，确认凭证状态与用户名被清除，已打开的账号相关题目页面被关闭，但本地代码文件仍保留。
-10. 在 `solution.cpp` 顶部点击“测试”，分别验证默认样例与自定义输入，确认结果页展示输入、实际输出和预期输出。
-11. 修改但不保存代码后点击“提交”，确认文件被自动保存；提交结束后确认结果页和侧栏题目状态同步更新。
-12. 未登录时确认侧栏仍显示今日题目，并提供“登录查看连续天数”入口；点击题目应复用现有题面页面。
-13. 登录后确认“今日挑战”显示官方连续天数、难度和今日完成状态；未完成时火焰使用弱化颜色，完成后火焰和通过图标高亮。
-14. 提交今日题目并通过，确认题目立即显示“已完成”；连续天数不在本地直接加一，刷新后以中国站返回值为准。
-15. 断网后重新打开侧栏，确认同日缓存标注“离线数据”；模拟跨天后确认不会继续把昨天的题目显示为今日题目。
-16. 点击每日挑战的失败重试项，以及侧栏顶部刷新按钮，确认前者只刷新每日挑战，后者同时刷新题目列表和每日挑战。
-17. 退出或切换账号，确认连续天数和完成状态不会沿用上一个账号，而公开的今日题目仍可显示。
-18. 登录后展开“我的题单”，确认只显示创建和收藏的普通题单，智能题单不出现；创建的题单排在收藏的题单之前。
-19. 首次展开一个题单，确认显示题单独立的完成进度和前 50 道题；长题单点击“加载更多”后保持力扣原始顺序。
-20. 在题单中打开题目并提交通过，确认已加载题单的独立进度自动同步；提交失败不得把题单或每日一题标记为完成。
-21. 断网时展开“我的题单”，确认显示加载失败而不是旧数据；退出或切换账号后确认内存中的题单立即清空。
-22. 未登录时展开“题库 → 标签/tag”，确认首项为“搜索标签…”，其后按中文名称排列全部标签；搜索应支持中文名、英文名和 slug。
-23. 展开一个标签，确认加载前 50 道题并在标签右侧显示总题数；点击“加载更多”后题目不重复，会员题保留锁定标记。
-24. 登录后确认标签题目显示完成状态；提交一道题并通过后，所有已加载标签中的对应题目应立即更新。
-25. 使用 Plus 账号展开“题库 → 公司”，确认公司列表按名称排列，首项为“搜索公司…”，普通账号则显示升级提示。
-26. 搜索并选择一个公司，确认侧栏定位并展开该公司，展示官方默认时间范围的前 50 道题；悬浮题目可查看出题频率。
-27. 点击“加载更多”确认题目不重复；打开公司题目并提交通过后，已加载公司列表中的完成状态应立即更新。
-28. 在 Linux 上安装 Microsoft C/C++ 扩展、`g++` 和 `gdb`；打开“两数之和”的 `solution.cpp`，设置断点并点击“调试/Debug”，确认断点命中原始源码且可单步和查看变量。
-29. 分别选择官方样例和自定义输入，确认一次会话只运行一个用例；测试 `void` 修改数组题，确认结束时输出修改后的参数。
-30. 制造 C++ 编译错误，确认不会启动 GDB，完整错误出现在 `LeetDock Debug` 输出频道，且题目目录和 `.vscode` 配置均未产生调试文件。
+欢迎提交 Issue 和 Pull Request。报告问题时，请尽量附上 VS Code 版本、LeetDock 版本、操作系统、复现步骤以及相关输出日志。
+
+<p align="right">（<a href="#readme-top">返回顶部</a>）</p>
+
+## 联系方式
+
+cooronx — [2197083441@qq.com](mailto:2197083441@qq.com)
+
+项目地址：[github.com/cooronx/leetdock](https://github.com/cooronx/leetdock)
+
+<p align="right">（<a href="#readme-top">返回顶部</a>）</p>
+
+## 致谢
+
+- [力扣中国站](https://leetcode.cn)
+
+<p align="right">（<a href="#readme-top">返回顶部</a>）</p>
+
+[contributors-shield]: https://img.shields.io/github/contributors/cooronx/leetdock.svg?style=for-the-badge
+[contributors-url]: https://github.com/cooronx/leetdock/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/cooronx/leetdock.svg?style=for-the-badge
+[forks-url]: https://github.com/cooronx/leetdock/network/members
+[stars-shield]: https://img.shields.io/github/stars/cooronx/leetdock.svg?style=for-the-badge
+[stars-url]: https://github.com/cooronx/leetdock/stargazers
+[issues-shield]: https://img.shields.io/github/issues/cooronx/leetdock.svg?style=for-the-badge
+[issues-url]: https://github.com/cooronx/leetdock/issues

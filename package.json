@@ -2,6 +2,7 @@
   "name": "leetdock",
   "displayName": "LeetDock",
   "description": "A focused LeetDock problem-solving workflow for Visual Studio Code.",
+  "icon": "media/leetdock.png",
   "version": "0.1.0",
   "publisher": "cooronx",
   "private": true,
