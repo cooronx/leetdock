@@ -6,7 +6,15 @@
   "version": "0.1.0",
   "publisher": "cooronx",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cooronx/leetdock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cooronx/leetdock/issues"
+  },
+  "homepage": "https://github.com/cooronx/leetdock#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -289,6 +297,33 @@
     "check:company-library": "node scripts/check-company-library.cjs",
     "watch": "tsc --watch -p ."
   },
+  "release": {
+    "branches": [
+      "main"
+    ],
+    "tagFormat": "v${version}",
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      [
+        "semantic-release-vsce",
+        {
+          "packageVsix": true
+        }
+      ],
+      [
+        "@semantic-release/github",
+        {
+          "assets": [
+            {
+              "path": "*.vsix",
+              "label": "LeetDock VSIX"
+            }
+          ]
+        }
+      ]
+    ]
+  },
   "dependencies": {
     "katex": "^0.18.1",
     "sanitize-html": "^2.17.6"
@@ -297,6 +332,8 @@
     "@types/node": "^20.19.43",
     "@types/sanitize-html": "^2.16.1",
     "@types/vscode": "1.90.0",
+    "semantic-release": "^25.0.9",
+    "semantic-release-vsce": "^6.1.6",
     "typescript": "~5.9.3"
   }
 }

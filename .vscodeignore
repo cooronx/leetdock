@@ -1,7 +1,10 @@
 .git/**
+.github/**
+.vscode/**
 .agents/**
 .codex/**
 chores/**
+scripts/**
 src/**
 .gitignore
 tsconfig.json
