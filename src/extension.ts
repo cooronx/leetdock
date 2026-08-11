@@ -12,10 +12,11 @@ import { CompanyService } from "./company/companyService";
 import { SolutionDebugModule } from "./debug/solutionDebugModule";
 import { DailyChallengeCache } from "./daily/dailyChallengeCache";
 import { DailyChallengeService } from "./daily/dailyChallengeService";
+import { DifficultyService } from "./difficulty/difficultyService";
 import { LeetDockTreeProvider } from "./explorer/leetDockTreeProvider";
 import { LeetCodeClient } from "./leetcode/client";
 import { toUserMessage } from "./leetcode/errors";
-import type { ProblemDetail } from "./leetcode/types";
+import type { Difficulty, ProblemDetail } from "./leetcode/types";
 import { ProblemCache } from "./problem/problemCache";
 import { ProblemService } from "./problem/problemService";
 import { ProblemListService } from "./problemList/problemListService";
@@ -40,12 +41,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const problemLists = new ProblemListService(client);
   const companies = new CompanyService(client);
   const tags = new TagService(client);
+  const difficulties = new DifficultyService(client);
   const explorer = new LeetDockTreeProvider(
     auth,
     daily,
     problemLists,
     companies,
     tags,
+    difficulties,
   );
   const languages = new LanguageService();
   const codeFiles = new CodeFileService(context, languages);
@@ -88,6 +91,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       }
       if (accepted) {
+        explorer.markDifficultyProblemAccepted(problem.titleSlug);
         explorer.markTagProblemAccepted(problem.titleSlug);
         explorer.markCompanyProblemAccepted(problem.titleSlug);
         try {
@@ -128,6 +132,7 @@ export function activate(context: vscode.ExtensionContext): void {
       problemLists.reset();
       companies.reset();
       tags.reset();
+      difficulties.reset();
       await Promise.all([
         problemCache.clearUserData(),
         daily.clearUserData(),
@@ -176,10 +181,11 @@ export function activate(context: vscode.ExtensionContext): void {
           const dailyState = await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Window,
-              title: "LeetDock 正在刷新题目、每日挑战、标签与题单…",
+              title: "LeetDock 正在刷新题目、每日挑战、难度、标签与题单…",
               cancellable: false,
             },
             async () => {
+              explorer.resetDifficulties();
               const [, state] = await Promise.all([
                 problems.refreshProblemList(),
                 explorer.refreshDailyChallenge(true),
@@ -202,10 +208,10 @@ export function activate(context: vscode.ExtensionContext): void {
         explorer.refresh();
         await vscode.window.showInformationMessage(
           auth.snapshot.status === "signed-in" && auth.snapshot.user?.isPremium === true
-            ? "LeetDock 题目列表、每日挑战、标签题库、我的题单和公司题库已刷新。"
+            ? "LeetDock 题目列表、每日挑战、难度题库、标签题库、我的题单和公司题库已刷新。"
             : auth.snapshot.status === "signed-in"
-            ? "LeetDock 题目列表、每日挑战、标签题库和我的题单已刷新。"
-            : "LeetDock 题目列表、每日挑战和标签题库已刷新。",
+            ? "LeetDock 题目列表、每日挑战、难度题库、标签题库和我的题单已刷新。"
+            : "LeetDock 题目列表、每日挑战、难度题库和标签题库已刷新。",
         );
       }),
     ),
@@ -249,6 +255,26 @@ export function activate(context: vscode.ExtensionContext): void {
         withAuthExpiryHandling(auth, async () => {
           if (typeof slug === "string") {
             await explorer.loadMoreMyProblemList(slug);
+          }
+        })
+      ),
+    ),
+    vscode.commands.registerCommand("leetdock.refreshDifficulty", (value?: unknown) =>
+      runWithErrorMessage(() =>
+        withAuthExpiryHandling(auth, async () => {
+          const difficulty = asDifficulty(value);
+          if (difficulty !== undefined) {
+            await explorer.refreshDifficulty(difficulty);
+          }
+        })
+      ),
+    ),
+    vscode.commands.registerCommand("leetdock.loadMoreDifficulty", (value?: unknown) =>
+      runWithErrorMessage(() =>
+        withAuthExpiryHandling(auth, async () => {
+          const difficulty = asDifficulty(value);
+          if (difficulty !== undefined) {
+            await explorer.loadMoreDifficulty(difficulty);
           }
         })
       ),
@@ -344,6 +370,7 @@ export function activate(context: vscode.ExtensionContext): void {
           daily.clearAll(),
         ]);
         explorer.resetDailyChallenge();
+        explorer.resetDifficulties();
         explorer.resetTags();
         explorer.resetCompanies();
         await vscode.window.showInformationMessage("LeetDock 缓存已清除。");
@@ -408,6 +435,12 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   void runWithErrorMessage(() => auth.initialize());
+}
+
+function asDifficulty(value: unknown): Difficulty | undefined {
+  return value === "Easy" || value === "Medium" || value === "Hard"
+    ? value
+    : undefined;
 }
 
 export function deactivate(): void {

@@ -229,14 +229,19 @@ async function checkExplorer() {
   assert.notEqual(library, undefined);
   assert.equal(provider.getTreeItem(library).label, "题库");
   const libraryChildren = await provider.getChildren(library);
-  assert.deepEqual(libraryChildren.map((node) => node.kind), ["tags", "companies"]);
-  const companyGroup = libraryChildren[1];
+  assert.deepEqual(
+    libraryChildren.map((node) => node.kind),
+    ["difficulties", "tags", "companies"],
+  );
+  const companyGroup = libraryChildren[2];
   assert.equal(companyGroup.kind, "companies");
   assert.equal(provider.getTreeItem(companyGroup).description, "1 个");
+  assert.equal(provider.getTreeItem(companyGroup).iconPath.color, undefined);
   const companyNodes = await provider.getChildren(companyGroup);
   assert.deepEqual(companyNodes.map((node) => node.kind), ["company-search", "company"]);
   assert.equal(provider.getTreeItem(companyNodes[0]).command.command, "leetdock.searchCompany");
   assert.equal(provider.getTreeItem(companyNodes[1]).label, "亚马逊");
+  assert.equal(provider.getTreeItem(companyNodes[1]).iconPath.color, undefined);
   assert.equal(provider.getParent(companyNodes[1]).kind, "companies");
 
   await provider.refreshCompany("amazon");
@@ -267,7 +272,7 @@ async function checkExplorer() {
   );
   const freeRoot = await nonPremium.getChildren();
   const freeLibrary = freeRoot.find((node) => node.kind === "library");
-  const freeCompanies = (await nonPremium.getChildren(freeLibrary))[1];
+  const freeCompanies = (await nonPremium.getChildren(freeLibrary))[2];
   const premiumStatus = (await nonPremium.getChildren(freeCompanies))[0];
   assert.equal(premiumStatus.status, "premium");
   assert.equal(providerLabel(nonPremium, premiumStatus), "升级 Plus 会员后查看");

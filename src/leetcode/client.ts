@@ -435,6 +435,39 @@ export class LeetCodeClient {
     };
   }
 
+  public async getDifficultyQuestions(
+    difficulty: Difficulty,
+    skip = 0,
+    limit = 50,
+  ): Promise<ProblemSearchPage> {
+    const data = await this.request<ProblemListData>(
+      "ProblemsetQuestionList",
+      PROBLEM_LIST_QUERY,
+      {
+        limit: clamp(limit, 1, 100),
+        skip: Math.max(0, Math.trunc(skip)),
+        filters: { difficulty: difficulty.toUpperCase() },
+      },
+      { referer: difficultyReferer(difficulty) },
+    );
+
+    const list = data.problemsetQuestionList;
+    if (list === null || list === undefined || !Array.isArray(list.questions)) {
+      throw new LeetCodeError(
+        "invalid-response",
+        "Missing difficulty questions.",
+      );
+    }
+    return {
+      questions: list.questions.map(mapProblemSummary),
+      total: requiredNonNegativeInteger(
+        list.total,
+        "problemsetQuestionList.total",
+      ),
+      hasMore: list.hasMore === true,
+    };
+  }
+
   public async getTags(): Promise<readonly ProblemTag[]> {
     const data = await this.request<QuestionTagTypesData>(
       "QuestionTagTypeWithTags",
@@ -1247,6 +1280,10 @@ function companyReferer(companySlug: string): string {
 
 function tagReferer(tagSlug: string): string {
   return `${LEETCODE_ORIGIN}/tag/${encodeURIComponent(tagSlug)}/problemset/`;
+}
+
+function difficultyReferer(difficulty: Difficulty): string {
+  return `${LEETCODE_ORIGIN}/problemset/?difficulty=${difficulty.toUpperCase()}`;
 }
 
 function requiredRequestValue(value: string, field: string): string {

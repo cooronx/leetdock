@@ -322,6 +322,7 @@ async function checkExplorerPresentation() {
   const root = await provider.getChildren();
   const groupNode = root.find((node) => node.kind === "my-lists");
   const groupItem = provider.getTreeItem(groupNode);
+  assert.equal(groupItem.iconPath.color, undefined);
   assert.equal(groupItem.label, "我的题单");
   assert.equal(groupItem.description, "2 个");
   assert.equal(groupItem.collapsibleState, vscodeStub.TreeItemCollapsibleState.Collapsed);
@@ -329,6 +330,7 @@ async function checkExplorerPresentation() {
   const lists = await provider.getChildren(groupNode);
   assert.deepEqual(lists.map((node) => node.kind), ["problem-list", "problem-list"]);
   assert.equal(provider.getTreeItem(lists[0]).description, "创建");
+  assert.equal(provider.getTreeItem(lists[0]).iconPath.color, undefined);
   assert.equal(provider.getTreeItem(lists[1]).description, "收藏");
 
   await provider.refreshMyProblemList("interview");

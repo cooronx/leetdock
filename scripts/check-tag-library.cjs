@@ -220,10 +220,14 @@ async function checkExplorer() {
   const root = await provider.getChildren();
   const library = root.find((node) => node.kind === "library");
   const libraryChildren = await provider.getChildren(library);
-  assert.deepEqual(libraryChildren.map((node) => node.kind), ["tags", "companies"]);
-  const tagGroup = libraryChildren[0];
+  assert.deepEqual(
+    libraryChildren.map((node) => node.kind),
+    ["difficulties", "tags", "companies"],
+  );
+  const tagGroup = libraryChildren[1];
   assert.equal(provider.getTreeItem(tagGroup).label, "标签/tag");
   assert.equal(provider.getTreeItem(tagGroup).description, "2 个");
+  assert.equal(provider.getTreeItem(tagGroup).iconPath.color, undefined);
   assert.equal(provider.getParent(tagGroup).kind, "library");
 
   const tagNodes = await provider.getChildren(tagGroup);
@@ -231,6 +235,7 @@ async function checkExplorer() {
   assert.equal(provider.getTreeItem(tagNodes[0]).command.command, "leetdock.searchTag");
   const arrayNode = tagNodes.find((node) => node.kind === "tag" && node.summary.slug === "array");
   assert.equal(provider.getTreeItem(arrayNode).label, "数组");
+  assert.equal(provider.getTreeItem(arrayNode).iconPath.color, undefined);
   assert.match(provider.getTreeItem(arrayNode).tooltip, /数组\nArray · array/);
   assert.equal(provider.getParent(arrayNode).kind, "tags");
 

@@ -388,23 +388,14 @@ async function checkExplorerPresentation() {
   assert.equal(group.label, "每日一题 （已连续12天）");
   assert.equal(group.description, "今日已完成");
   assert.equal(group.iconPath.id, "flame");
-  assert.equal(group.iconPath.color.id, "leetdock.streakFlame");
-
-  const streakColor = manifest.contributes.colors.find(
-    (color) => color.id === "leetdock.streakFlame",
-  );
-  assert.deepEqual(streakColor?.defaults, {
-    dark: "#FF7043",
-    light: "#D84315",
-    highContrast: "#FFAB91",
-    highContrastLight: "#BF360C",
-  });
+  assert.equal(group.iconPath.color, undefined);
 
   const children = await provider.getChildren(dailyNode);
   assert.deepEqual(children.map((node) => node.kind), ["daily-problem"]);
   const problem = provider.getTreeItem(children[0]);
   assert.equal(problem.label, "3310. 移除可疑的方法");
   assert.equal(problem.description, "中等 · 已完成");
+  assert.equal(problem.iconPath.color, undefined);
   assert.equal(problem.command.command, "leetdock.openProblem");
   assert.deepEqual(problem.command.arguments, ["remove-methods-from-project"]);
   assert.equal(provider.isDailyChallenge("remove-methods-from-project"), true);

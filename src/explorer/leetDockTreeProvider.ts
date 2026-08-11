@@ -9,9 +9,15 @@ import type {
   DailyChallengeService,
   DailyChallengeState,
 } from "../daily/dailyChallengeService";
+import {
+  DIFFICULTIES,
+  type DifficultyDetailState,
+  DifficultyService,
+} from "../difficulty/difficultyService";
 import type {
   CompanyQuestion,
   CompanySummary,
+  Difficulty,
   ProblemListQuestion,
   ProblemListSummary,
   ProblemSummary,
@@ -63,6 +69,10 @@ type TagDetailViewState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly error: unknown };
 
+type DifficultyDetailViewState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly error: unknown };
+
 export type LeetDockNode =
   | { readonly kind: "account" }
   | { readonly kind: "daily" }
@@ -91,6 +101,23 @@ export type LeetDockNode =
   }
   | { readonly kind: "problem-list-more"; readonly summary: ProblemListSummary }
   | { readonly kind: "library" }
+  | { readonly kind: "difficulties" }
+  | {
+    readonly kind: "difficulty";
+    readonly difficulty: Difficulty;
+    readonly detail?: DifficultyDetailState;
+  }
+  | {
+    readonly kind: "difficulty-status";
+    readonly difficulty: Difficulty;
+    readonly status: "empty" | "error" | "loading";
+  }
+  | {
+    readonly kind: "difficulty-problem";
+    readonly difficulty: Difficulty;
+    readonly problem: ProblemSummary;
+  }
+  | { readonly kind: "difficulty-more"; readonly difficulty: Difficulty }
   | { readonly kind: "tags" }
   | { readonly kind: "tag-search" }
   | {
@@ -155,6 +182,12 @@ export class LeetDockTreeProvider
   private tagsLoadSequence = 0;
   private readonly tagDetailViews = new Map<string, TagDetailViewState>();
   private readonly loadingMoreTags = new Set<string>();
+  private difficultyGeneration = 0;
+  private readonly difficultyDetailViews = new Map<
+    Difficulty,
+    DifficultyDetailViewState
+  >();
+  private readonly loadingMoreDifficulties = new Set<Difficulty>();
   private disposed = false;
 
   public constructor(
@@ -163,6 +196,7 @@ export class LeetDockTreeProvider
     private readonly problemLists: ProblemListService,
     private readonly companies: CompanyService,
     private readonly tags: TagService,
+    private readonly difficulties: DifficultyService,
   ) {
     this.authSubscription = auth.onDidChange(() => {
       this.dailyLoadSequence += 1;
@@ -170,6 +204,7 @@ export class LeetDockTreeProvider
       this.resetMyProblemLists(false);
       this.resetCompanies(false);
       this.resetTags(false);
+      this.resetDifficulties(false);
       this.refresh();
     });
   }
@@ -470,6 +505,55 @@ export class LeetDockTreeProvider
     }
   }
 
+  public async refreshDifficulty(difficulty: Difficulty): Promise<void> {
+    const generation = this.difficultyGeneration;
+    this.difficultyDetailViews.set(difficulty, { kind: "loading" });
+    this.refresh();
+    try {
+      await this.difficulties.loadDetail(difficulty);
+      if (generation === this.difficultyGeneration) {
+        this.difficultyDetailViews.delete(difficulty);
+        this.refresh();
+      }
+    } catch (error) {
+      if (generation === this.difficultyGeneration) {
+        this.difficultyDetailViews.set(difficulty, { kind: "error", error });
+        this.refresh();
+      }
+      throw error;
+    }
+  }
+
+  public async loadMoreDifficulty(difficulty: Difficulty): Promise<void> {
+    if (this.loadingMoreDifficulties.has(difficulty)) {
+      return;
+    }
+    this.loadingMoreDifficulties.add(difficulty);
+    this.refresh();
+    try {
+      await this.difficulties.loadMore(difficulty);
+    } finally {
+      this.loadingMoreDifficulties.delete(difficulty);
+      this.refresh();
+    }
+  }
+
+  public markDifficultyProblemAccepted(titleSlug: string): void {
+    if (this.difficulties.markAccepted(titleSlug)) {
+      this.refresh();
+    }
+  }
+
+  public resetDifficulties(refresh = true): void {
+    this.difficultyGeneration += 1;
+    this.difficulties.reset();
+    this.difficultyDetailViews.clear();
+    this.loadingMoreDifficulties.clear();
+    if (refresh) {
+      this.refresh();
+    }
+  }
+
   public async pickTag(): Promise<LeetDockNode | undefined> {
     const tags = this.tagsView.kind === "ready"
       ? this.tagsView.tags
@@ -549,6 +633,19 @@ export class LeetDockTreeProvider
         );
       case "library":
         return libraryItem();
+      case "difficulties":
+        return difficultiesItem();
+      case "difficulty":
+        return difficultyItem(element.difficulty, element.detail);
+      case "difficulty-status":
+        return difficultyStatusItem(element.difficulty, element.status);
+      case "difficulty-problem":
+        return difficultyProblemItem(element.difficulty, element.problem);
+      case "difficulty-more":
+        return difficultyMoreItem(
+          element.difficulty,
+          this.loadingMoreDifficulties.has(element.difficulty),
+        );
       case "tags":
         return tagsItem(this.tagsView);
       case "tag-search":
@@ -617,7 +714,17 @@ export class LeetDockTreeProvider
       return this.problemListChildren(element.summary);
     }
     if (element.kind === "library") {
-      return [{ kind: "tags" }, { kind: "companies" }];
+      return [{ kind: "difficulties" }, { kind: "tags" }, { kind: "companies" }];
+    }
+    if (element.kind === "difficulties") {
+      return DIFFICULTIES.map((difficulty) => ({
+        kind: "difficulty" as const,
+        difficulty,
+        detail: this.difficulties.getDetailSnapshot(difficulty),
+      }));
+    }
+    if (element.kind === "difficulty") {
+      return this.difficultyChildren(element.difficulty);
     }
     if (element.kind === "tags") {
       return this.tagsChildren();
@@ -636,9 +743,16 @@ export class LeetDockTreeProvider
 
   public getParent(element: LeetDockNode): LeetDockNode | undefined {
     switch (element.kind) {
+      case "difficulties":
       case "tags":
       case "companies":
         return { kind: "library" };
+      case "difficulty":
+        return { kind: "difficulties" };
+      case "difficulty-status":
+      case "difficulty-problem":
+      case "difficulty-more":
+        return { kind: "difficulty", difficulty: element.difficulty };
       case "tag-search":
       case "tags-status":
       case "tag":
@@ -706,6 +820,32 @@ export class LeetDockTreeProvider
           detail: this.problemLists.getDetailSnapshot(summary.slug),
         }));
     }
+  }
+
+  private difficultyChildren(difficulty: Difficulty): LeetDockNode[] {
+    const view = this.difficultyDetailViews.get(difficulty);
+    const detail = this.difficulties.getDetailSnapshot(difficulty);
+    if (view?.kind === "error") {
+      return [{ kind: "difficulty-status", difficulty, status: "error" }];
+    }
+    if (detail === undefined) {
+      if (view?.kind !== "loading") {
+        void this.refreshDifficulty(difficulty).catch(() => undefined);
+      }
+      return [{ kind: "difficulty-status", difficulty, status: "loading" }];
+    }
+    const children: LeetDockNode[] = detail.questions.map((problem) => ({
+      kind: "difficulty-problem" as const,
+      difficulty,
+      problem,
+    }));
+    if (children.length === 0) {
+      children.push({ kind: "difficulty-status", difficulty, status: "empty" });
+    }
+    if (detail.hasMore) {
+      children.push({ kind: "difficulty-more", difficulty });
+    }
+    return children;
   }
 
   private problemListChildren(summary: ProblemListSummary): LeetDockNode[] {
@@ -906,19 +1046,13 @@ function dailyGroupItem(view: DailyViewState): vscode.TreeItem {
       break;
     case "error":
       item.description = "加载失败";
-      item.iconPath = new vscode.ThemeIcon(
-        "flame",
-        new vscode.ThemeColor("list.warningForeground"),
-      );
+      item.iconPath = new vscode.ThemeIcon("flame");
       item.tooltip = "今日挑战加载失败；展开后点击重试";
       break;
     case "ready": {
       const offline = isOffline(view.state);
       item.description = dailyGroupDescription(view.state, offline);
-      item.iconPath = new vscode.ThemeIcon(
-        "flame",
-        new vscode.ThemeColor("leetdock.streakFlame"),
-      );
+      item.iconPath = new vscode.ThemeIcon("flame");
       item.tooltip = dailyGroupTooltip(view.state, offline);
       break;
     }
@@ -984,9 +1118,6 @@ function dailyProblemItem(state: DailyChallengeState): vscode.TreeItem {
     state.todayCompleted === true
       ? "pass-filled"
       : problem.paidOnly ? "lock" : "circle-large-outline",
-    state.todayCompleted === true
-      ? new vscode.ThemeColor("testing.iconPassed")
-      : undefined,
   );
   item.command = {
     command: "leetdock.openProblem",
@@ -1196,6 +1327,111 @@ function libraryItem(): vscode.TreeItem {
   item.id = "leetdock.library";
   item.iconPath = new vscode.ThemeIcon("library");
   item.contextValue = "leetdock.library";
+  return item;
+}
+
+function difficultiesItem(): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    "难度/difficulty",
+    vscode.TreeItemCollapsibleState.Collapsed,
+  );
+  item.id = "leetdock.difficulties";
+  item.iconPath = new vscode.ThemeIcon("symbol-enum");
+  item.description = "3 个";
+  item.tooltip = "按力扣官方难度浏览题目";
+  item.contextValue = "leetdock.difficulties";
+  return item;
+}
+
+function difficultyItem(
+  difficulty: Difficulty,
+  detail: DifficultyDetailState | undefined,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    `${difficultyName(difficulty)}/${difficulty.toLowerCase()}`,
+    vscode.TreeItemCollapsibleState.Collapsed,
+  );
+  item.id = `leetdock.difficulty.${difficulty.toLowerCase()}`;
+  item.description = detail === undefined ? undefined : `${detail.total} 题`;
+  item.tooltip = detail === undefined
+    ? `力扣${difficultyName(difficulty)}题目`
+    : `力扣${difficultyName(difficulty)}题目 · ${detail.total} 题`;
+  item.iconPath = new vscode.ThemeIcon(
+    "circle-filled",
+    new vscode.ThemeColor(difficultyColor(difficulty)),
+  );
+  item.contextValue = "leetdock.difficulty";
+  return item;
+}
+
+function difficultyStatusItem(
+  difficulty: Difficulty,
+  status: "empty" | "error" | "loading",
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    status === "loading"
+      ? `正在加载${difficultyName(difficulty)}题目…`
+      : status === "empty"
+      ? `暂无${difficultyName(difficulty)}题目`
+      : "加载失败 · 点击重试",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.difficulty.${difficulty.toLowerCase()}.${status}`;
+  item.iconPath = new vscode.ThemeIcon(
+    status === "loading" ? "loading~spin" : status === "empty" ? "info" : "refresh",
+  );
+  if (status === "error") {
+    item.command = {
+      command: "leetdock.refreshDifficulty",
+      title: "刷新难度题目",
+      arguments: [difficulty],
+    };
+  }
+  item.contextValue = `leetdock.difficulty.${status}`;
+  return item;
+}
+
+function difficultyProblemItem(
+  difficulty: Difficulty,
+  problem: ProblemSummary,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    `${problem.frontendId}. ${displayTitle(problem)}`,
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.difficulty.${difficulty.toLowerCase()}.problem.${problem.titleSlug}`;
+  item.description = [difficultyLabel(problem), statusLabel(problem)]
+    .filter((part) => part.length > 0)
+    .join(" · ");
+  item.tooltip = `${problem.title}\nhttps://leetcode.cn/problems/${problem.titleSlug}/`;
+  item.iconPath = new vscode.ThemeIcon(problemIcon(problem));
+  item.command = {
+    command: "leetdock.openProblem",
+    title: "打开难度题库中的题目",
+    arguments: [problem.titleSlug],
+  };
+  item.contextValue = "leetdock.difficulty.problem";
+  return item;
+}
+
+function difficultyMoreItem(
+  difficulty: Difficulty,
+  loading: boolean,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    loading ? "正在加载更多…" : "加载更多…",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.id = `leetdock.difficulty.${difficulty.toLowerCase()}.more`;
+  item.iconPath = new vscode.ThemeIcon(loading ? "loading~spin" : "more");
+  if (!loading) {
+    item.command = {
+      command: "leetdock.loadMoreDifficulty",
+      title: "加载更多难度题目",
+      arguments: [difficulty],
+    };
+  }
+  item.contextValue = "leetdock.difficulty.more";
   return item;
 }
 
@@ -1582,13 +1818,28 @@ function displayTitle(problem: ProblemSummary): string {
 }
 
 function difficultyLabel(problem: ProblemSummary): string {
-  switch (problem.difficulty) {
+  return difficultyName(problem.difficulty);
+}
+
+function difficultyName(difficulty: Difficulty): string {
+  switch (difficulty) {
     case "Easy":
       return "简单";
     case "Medium":
       return "中等";
     case "Hard":
       return "困难";
+  }
+}
+
+function difficultyColor(difficulty: Difficulty): string {
+  switch (difficulty) {
+    case "Easy":
+      return "testing.iconPassed";
+    case "Medium":
+      return "list.warningForeground";
+    case "Hard":
+      return "list.errorForeground";
   }
 }
 
