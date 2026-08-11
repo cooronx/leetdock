@@ -12,6 +12,9 @@
     面向力扣中国站的 Visual Studio Code 刷题插件
     <br />
     <a href="https://github.com/cooronx/leetdock/issues">issues</a>
+    <a href="https://linux.do/">
+      Linux.do
+    </a>
   </p>
 </div>
 
