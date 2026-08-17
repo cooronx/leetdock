@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DebugProblemSpec } from "../debug/problemSpec";
-import type { LeetCodeApi } from "../leetcode/api";
+import { LeetCodeClient } from "../leetcode/client";
 import { LeetCodeError } from "../leetcode/errors";
 import type {
   ProblemDetail,
@@ -17,7 +17,7 @@ export type ProblemLookupResult =
 
 export class ProblemService {
   public constructor(
-    private readonly client: LeetCodeApi,
+    private readonly client: LeetCodeClient,
     private readonly cache: ProblemCache,
   ) {}
 

@@ -4,13 +4,8 @@
 .agents/**
 .codex/**
 chores/**
-companion/**
 scripts/**
 src/**
-dist/leetcode/client.js
-dist/leetcode/graphql.js
-dist/leetcode/judgeResult.js
-dist/storage/credentialStore.js
 .gitignore
 tsconfig.json
 **/*.map

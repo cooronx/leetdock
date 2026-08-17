@@ -1,4 +1,4 @@
-import type { LeetCodeApi } from "../leetcode/api";
+import { LeetCodeClient } from "../leetcode/client";
 import { LeetCodeError } from "../leetcode/errors";
 import type {
   ProblemSummary,
@@ -20,7 +20,7 @@ export class TagService {
   private catalog: readonly ProblemTag[] | undefined;
   private readonly details = new Map<string, TagDetailState>();
 
-  public constructor(private readonly client: LeetCodeApi) {}
+  public constructor(private readonly client: LeetCodeClient) {}
 
   public get catalogSnapshot(): readonly ProblemTag[] | undefined {
     return this.catalog;

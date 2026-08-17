@@ -1,4 +1,4 @@
-import type { LeetCodeApi } from "../leetcode/api";
+import { LeetCodeClient } from "../leetcode/client";
 import { LeetCodeError } from "../leetcode/errors";
 import type {
   ProblemListPage,
@@ -22,7 +22,7 @@ export class ProblemListService {
   private catalog: readonly ProblemListSummary[] | undefined;
   private readonly details = new Map<string, ProblemListDetailState>();
 
-  public constructor(private readonly client: LeetCodeApi) {}
+  public constructor(private readonly client: LeetCodeClient) {}
 
   public get catalogSnapshot(): readonly ProblemListSummary[] | undefined {
     return this.catalog;

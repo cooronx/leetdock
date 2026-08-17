@@ -1,10 +1,23 @@
 import * as vscode from "vscode";
-import type { LocalAuthenticationState } from "../bridge/protocol";
+import { LeetCodeClient } from "../leetcode/client";
+import { LeetCodeError } from "../leetcode/errors";
 import type { UserInfo } from "../leetcode/types";
 import { CacheStorage } from "../storage/cacheStorage";
-import type { AuthenticationBridge } from "./localAuthBridge";
+import {
+  CredentialStore,
+  normalizeLeetCodeCookie,
+} from "../storage/credentialStore";
 
 const CURRENT_USER_KEY = "auth.currentUser";
+const PENDING_SIGN_IN_KEY = "auth.pendingSignIn";
+const SIGN_IN_WINDOW_MS = 5 * 60 * 1_000;
+const MAX_CALLBACK_COOKIE_LENGTH = 16 * 1024;
+const MAX_CALLBACK_QUERY_LENGTH = 64 * 1024;
+
+interface PendingSignIn {
+  readonly createdAt: number;
+  readonly previousUsername?: string;
+}
 
 export type AuthStatus = "offline" | "signed-in" | "signed-out" | "verifying";
 
@@ -23,7 +36,9 @@ export class AuthService implements vscode.Disposable {
   private readonly userDataCleanupHandlers = new Set<() => Promise<void>>();
 
   public constructor(
-    private readonly bridge: AuthenticationBridge,
+    private readonly context: vscode.ExtensionContext,
+    private readonly client: LeetCodeClient,
+    private readonly credentials: CredentialStore,
     private readonly cache: CacheStorage,
   ) {}
 
@@ -38,19 +53,19 @@ export class AuthService implements vscode.Disposable {
     return new vscode.Disposable(() => this.userDataCleanupHandlers.delete(handler));
   }
 
-  public initialize(): Promise<void> {
+  public async initialize(): Promise<void> {
     return this.serialize(() => this.initializeInternal());
   }
 
-  public signIn(): Promise<void> {
-    return this.serialize(() => this.bridge.signIn(this.snapshotValue.user?.username));
+  public async signIn(): Promise<void> {
+    return this.serialize(() => this.signInInternal());
   }
 
-  public acceptAuthenticatedUser(value: unknown): Promise<void> {
-    return this.serialize(() => this.acceptAuthenticatedUserInternal(value));
+  public async handleUri(uri: vscode.Uri): Promise<UserInfo | undefined> {
+    return this.serialize(() => this.handleUriInternal(uri));
   }
 
-  public signOut(): Promise<void> {
+  public async signOut(): Promise<void> {
     return this.serialize(() => this.signOutInternal());
   }
 
@@ -74,107 +89,221 @@ export class AuthService implements vscode.Disposable {
   }
 
   private async initializeInternal(): Promise<void> {
-    const cachedUser = await this.cache.get<UserInfo>(CURRENT_USER_KEY);
+    const [cookie, cachedUser] = await Promise.all([
+      this.credentials.getCookie(),
+      this.cache.get<UserInfo>(CURRENT_USER_KEY),
+    ]);
+
+    if (cookie === undefined) {
+      await Promise.all([
+        this.cache.delete(CURRENT_USER_KEY),
+        ...[...this.userDataCleanupHandlers].map((handler) => handler()),
+      ]);
+      this.update({ status: "signed-out" });
+      return;
+    }
+
     this.update({
       status: "verifying",
-      ...(isSignedInUser(cachedUser) ? { user: cachedUser } : {}),
+      ...(cachedUser?.isSignedIn === true ? { user: cachedUser } : {}),
     });
 
-    let state: LocalAuthenticationState;
     try {
-      state = await this.bridge.getState();
+      const user = await this.client.getCurrentUser();
+      if (user.isSignedIn === false) {
+        await this.clearAuthentication();
+        this.update({ status: "signed-out" });
+        await vscode.window.showWarningMessage("LeetDock 登录已过期，请重新登录。");
+        return;
+      }
+      if (user.username.trim().length === 0) {
+        throw new LeetCodeError(
+          "invalid-response",
+          "Signed-in current user response did not include a username.",
+        );
+      }
+
+      await this.cache.set(CURRENT_USER_KEY, user);
+      this.update({ status: "signed-in", user });
     } catch {
       this.update({
         status: "offline",
-        ...(isSignedInUser(cachedUser) ? { user: cachedUser } : {}),
+        ...(cachedUser?.isSignedIn === true ? { user: cachedUser } : {}),
       });
-      return;
-    }
-    await this.applyState(state, cachedUser);
-    if (state.status === "signed-out" && state.reason === "expired") {
-      await vscode.window.showWarningMessage("LeetDock 登录已过期，请重新登录。");
     }
   }
 
-  private async acceptAuthenticatedUserInternal(value: unknown): Promise<void> {
-    if (!isSignedInUser(value)) {
-      throw new Error("LeetDock 本地网络组件返回了无效的登录用户。");
-    }
-    const previousSnapshot = this.snapshotValue;
-    this.update({ status: "verifying", ...(previousSnapshot.user === undefined
-      ? {}
-      : { user: previousSnapshot.user }) });
+  private async signInInternal(): Promise<void> {
+    const pending: PendingSignIn = {
+      createdAt: Date.now(),
+      ...(this.snapshotValue.user?.username === undefined
+        ? {}
+        : { previousUsername: this.snapshotValue.user.username }),
+    };
+    await this.cache.set(PENDING_SIGN_IN_KEY, pending, SIGN_IN_WINDOW_MS);
+    const authorizationUrl = vscode.Uri.parse(
+      `https://leetcode.cn/authorize-login/${encodeURIComponent(vscode.env.uriScheme)}/`,
+    ).with({ query: `path=${encodeURIComponent(this.context.extension.id)}` });
+
+    let opened = false;
     try {
-      if (previousSnapshot.user?.username !== value.username) {
-        await this.runUserDataCleanup();
-      }
-      await this.cache.set(CURRENT_USER_KEY, value);
-      this.update({ status: "signed-in", user: value });
+      opened = await vscode.env.openExternal(authorizationUrl);
+    } catch (error) {
+      await this.cache.delete(PENDING_SIGN_IN_KEY);
+      throw error;
+    }
+    if (!opened) {
+      await this.cache.delete(PENDING_SIGN_IN_KEY);
+      throw new Error("无法打开 LeetDock 登录页面。");
+    }
+  }
+
+  private async handleUriInternal(uri: vscode.Uri): Promise<UserInfo | undefined> {
+    if (
+      uri.scheme !== vscode.env.uriScheme ||
+      uri.authority !== this.context.extension.id ||
+      (uri.path !== "" && uri.path !== "/") ||
+      uri.fragment !== ""
+    ) {
+      throw new Error("收到的登录回调地址无效。");
+    }
+    if (uri.query.length > MAX_CALLBACK_QUERY_LENGTH) {
+      throw new Error("登录回调参数过大。");
+    }
+
+    const cookie = validateAuthenticationCookie(
+      readSingleRawQueryParameter(uri.query, "cookie"),
+    );
+    const pendingValue = await this.cache.get<unknown>(PENDING_SIGN_IN_KEY);
+    if (!isPendingSignIn(pendingValue)) {
+      await this.cache.delete(PENDING_SIGN_IN_KEY);
+      throw new Error("登录请求已过期，请重新执行 Sign In。");
+    }
+    if (pendingValue.previousUsername !== this.snapshotValue.user?.username) {
+      await this.cache.delete(PENDING_SIGN_IN_KEY);
+      throw new Error("登录状态已发生变化，请重新执行 Sign In。");
+    }
+    await this.cache.delete(PENDING_SIGN_IN_KEY);
+
+    const previousCookie = await this.credentials.getCookie();
+    const previousSnapshot = this.snapshotValue;
+    this.update({
+      status: "verifying",
+      ...(previousSnapshot.user === undefined ? {} : { user: previousSnapshot.user }),
+    });
+
+    let user: UserInfo;
+    try {
+      user = await this.client.verifyCookie(cookie);
     } catch (error) {
       this.update(previousSnapshot);
       throw error;
     }
+    if (user.isSignedIn === false) {
+      this.update(previousSnapshot);
+      throw new LeetCodeError("authentication", "LeetDock rejected the callback cookie.");
+    }
+    if (user.username.trim().length === 0) {
+      this.update(previousSnapshot);
+      throw new LeetCodeError(
+        "invalid-response",
+        "Signed-in current user response did not include a username.",
+      );
+    }
+
+    const previousUsername = previousSnapshot.user?.username;
+    const confirmationMessage =
+      previousUsername !== undefined && previousUsername !== user.username
+        ? `即将把 LeetDock 账号从 ${previousUsername} 切换为 ${user.username}。是否确认？`
+        : `即将登录 LeetDock 账号：${user.username}。是否确认？`;
+    const confirmed = await vscode.window.showWarningMessage(
+      confirmationMessage,
+      { modal: true },
+      "确认登录",
+    );
+    if (confirmed !== "确认登录") {
+      this.update(previousSnapshot);
+      return undefined;
+    }
+
+    try {
+      if (previousSnapshot.user?.username !== user.username) {
+        await Promise.all(
+          [...this.userDataCleanupHandlers].map((handler) => handler()),
+        );
+      }
+      await this.credentials.storeCookie(cookie);
+      await this.cache.set(CURRENT_USER_KEY, user);
+    } catch (error) {
+      if (previousCookie === undefined) {
+        await this.credentials.deleteCookie();
+      } else {
+        await this.credentials.storeCookie(previousCookie);
+      }
+      if (previousSnapshot.user === undefined) {
+        await this.cache.delete(CURRENT_USER_KEY);
+      } else {
+        await this.cache.set(CURRENT_USER_KEY, previousSnapshot.user);
+      }
+      this.update(previousSnapshot);
+      throw error;
+    }
+    this.update({ status: "signed-in", user });
+    return user;
   }
 
   private async signOutInternal(): Promise<void> {
-    await this.bridge.signOut();
-    await this.clearRemoteAuthentication();
+    await this.clearAuthentication();
     this.update({ status: "signed-out" });
   }
 
   private async revalidateAuthenticationInternal(): Promise<AuthenticationValidation> {
+    const cookie = await this.credentials.getCookie();
+    if (cookie === undefined) {
+      try {
+        await this.clearAuthentication();
+        this.update({ status: "signed-out" });
+        return "expired";
+      } catch {
+        this.update({ status: "offline" });
+        return "unavailable";
+      }
+    }
+
     const cachedUser = this.snapshotValue.user ??
       await this.cache.get<UserInfo>(CURRENT_USER_KEY);
-    let state: LocalAuthenticationState;
     try {
-      state = await this.bridge.getState();
+      const user = await this.client.getCurrentUser();
+      if (user.isSignedIn === false) {
+        await this.clearAuthentication();
+        this.update({ status: "signed-out" });
+        return "expired";
+      }
+      if (user.username.trim().length === 0) {
+        throw new LeetCodeError(
+          "invalid-response",
+          "Signed-in current user response did not include a username.",
+        );
+      }
+      await this.cache.set(CURRENT_USER_KEY, user);
+      this.update({ status: "signed-in", user });
+      return "valid";
     } catch {
       this.update({
         status: "offline",
-        ...(isSignedInUser(cachedUser) ? { user: cachedUser } : {}),
+        ...(cachedUser?.isSignedIn === true ? { user: cachedUser } : {}),
       });
       return "unavailable";
     }
-    await this.applyState(state, cachedUser);
-    if (state.status === "signed-in") {
-      return "valid";
-    }
-    return state.status === "signed-out" ? "expired" : "unavailable";
   }
 
-  private async applyState(
-    state: LocalAuthenticationState,
-    cachedUser?: UserInfo,
-  ): Promise<void> {
-    if (state.status === "signed-in") {
-      if (cachedUser?.username !== state.user.username) {
-        await this.runUserDataCleanup();
-      }
-      await this.cache.set(CURRENT_USER_KEY, state.user);
-      this.update({ status: "signed-in", user: state.user });
-      return;
-    }
-    if (state.status === "signed-out") {
-      await this.clearRemoteAuthentication();
-      this.update({ status: "signed-out" });
-      return;
-    }
-    const fallbackUser = state.user ?? cachedUser;
-    this.update({
-      status: "offline",
-      ...(isSignedInUser(fallbackUser) ? { user: fallbackUser } : {}),
-    });
-  }
-
-  private async clearRemoteAuthentication(): Promise<void> {
+  private async clearAuthentication(): Promise<void> {
     await Promise.all([
+      this.credentials.deleteCookie(),
       this.cache.delete(CURRENT_USER_KEY),
-      this.runUserDataCleanup(),
+      this.cache.delete(PENDING_SIGN_IN_KEY),
+      ...[...this.userDataCleanupHandlers].map((handler) => handler()),
     ]);
-  }
-
-  private async runUserDataCleanup(): Promise<void> {
-    await Promise.all([...this.userDataCleanupHandlers].map((handler) => handler()));
   }
 
   private update(snapshot: AuthSnapshot): void {
@@ -200,14 +329,71 @@ export class AuthService implements vscode.Disposable {
   }
 }
 
-function isSignedInUser(value: unknown): value is UserInfo {
+function readSingleRawQueryParameter(query: string, target: string): string {
+  let result: string | undefined;
+  let matches = 0;
+  for (const part of query.split("&")) {
+    const separator = part.indexOf("=");
+    const rawKey = separator === -1 ? part : part.slice(0, separator);
+    const rawValue = separator === -1 ? "" : part.slice(separator + 1);
+    let key: string;
+    try {
+      key = decodeURIComponent(rawKey);
+    } catch {
+      continue;
+    }
+    if (key !== target) {
+      continue;
+    }
+    matches += 1;
+    if (matches > 1) {
+      throw new Error(`登录回调包含重复的 ${target} 参数。`);
+    }
+    try {
+      result = decodeURIComponent(rawValue);
+    } catch {
+      throw new Error("登录回调中的 Cookie 编码无效。");
+    }
+  }
+  if (result === undefined) {
+    throw new Error("登录回调中缺少 Cookie。");
+  }
+  return result;
+}
+
+function validateAuthenticationCookie(value: string): string {
+  const cookie = normalizeLeetCodeCookie(value);
+  if (cookie.length > MAX_CALLBACK_COOKIE_LENGTH) {
+    throw new Error("登录回调中的 Cookie 过大。");
+  }
+  if (!hasCookie(cookie, "LEETCODE_SESSION") || !hasCookie(cookie, "csrftoken")) {
+    throw new Error("登录回调中的 Cookie 不完整，请重新登录。");
+  }
+  return cookie;
+}
+
+function hasCookie(cookie: string, name: string): boolean {
+  return cookie.split(";").some((part) => {
+    const separator = part.indexOf("=");
+    return (
+      separator > 0 &&
+      part.slice(0, separator).trim() === name &&
+      part.slice(separator + 1).trim().length > 0
+    );
+  });
+}
+
+function isPendingSignIn(value: unknown): value is PendingSignIn {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
-  return Reflect.get(value, "isSignedIn") === true &&
-    typeof Reflect.get(value, "username") === "string" &&
-    Reflect.get(value, "username").trim().length > 0 &&
-    typeof Reflect.get(value, "isPremium") === "boolean" &&
-    (Reflect.get(value, "avatar") === undefined ||
-      typeof Reflect.get(value, "avatar") === "string");
+  const createdAt = Reflect.get(value, "createdAt");
+  const previousUsername = Reflect.get(value, "previousUsername");
+  const age = typeof createdAt === "number" ? Date.now() - createdAt : Number.NaN;
+  return (
+    Number.isFinite(age) &&
+    age >= 0 &&
+    age <= SIGN_IN_WINDOW_MS &&
+    (previousUsername === undefined || typeof previousUsername === "string")
+  );
 }

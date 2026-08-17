@@ -4,8 +4,8 @@ import {
   CredentialStore,
   normalizeLeetCodeCookie,
 } from "../storage/credentialStore";
-import type { LeetCodeApi } from "./api";
 import { LeetCodeError } from "./errors";
+import { createProxyAwareFetch } from "./httpTransport";
 import { isJudgePending, mapJudgeResult } from "./judgeResult";
 import {
   COMPANY_QUESTIONS_QUERY,
@@ -310,7 +310,7 @@ class RequestGate {
   }
 }
 
-export class LeetCodeClient implements LeetCodeApi {
+export class LeetCodeClient {
   private readonly endpoint: string;
   private readonly streakEndpoint: string;
   private readonly problemIndexEndpoint: string;
@@ -335,7 +335,7 @@ export class LeetCodeClient implements LeetCodeApi {
       DEFAULT_MAX_RETRIES,
       "maxRetries",
     );
-    this.fetchImplementation = options.fetchImplementation ?? fetch;
+    this.fetchImplementation = options.fetchImplementation ?? createProxyAwareFetch();
     this.requestGate = new RequestGate(
       positiveInteger(
         options.maxConcurrency,

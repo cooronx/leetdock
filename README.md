@@ -63,8 +63,6 @@ LeetDock 是一个连接 [力扣中国站](https://leetcode.cn) 的 vscode(curso
 
 安装并启用 LeetDock 后，在侧边栏中点击登录。插件会自动打开浏览器进行授权，授权完成后点击返回 VS Code 即可完成登录。
 
-在 Remote-SSH、WSL 或 Dev Container 窗口中，LeetDock 会自动安装并使用本地网络组件。登录凭据和所有力扣网络请求留在本机，代码文件、编译和调试仍在远程工作区执行。从旧版本升级后需要重新登录一次，将凭据迁移到本地组件。
-
 ![登录力扣](resources/login.gif)
 
 ### 2. 浏览题目
