@@ -28,11 +28,14 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onUri"
+    "onCommand:leetdock.internal.remoteAuth.changed"
   ],
   "main": "./dist/extension.js",
   "extensionKind": [
     "workspace"
+  ],
+  "extensionDependencies": [
+    "cooronx.leetdock-auth"
   ],
   "contributes": {
     "commands": [
@@ -283,9 +286,10 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p .",
-    "check": "npm run compile && npm run check:extension-host && npm run check:solution-support && npm run check:debug-support && npm run check:problem-renderer && npm run check:daily-challenge && npm run check:problem-lists && npm run check:difficulty-library && npm run check:tag-library && npm run check:company-library",
+    "compile": "tsc -p . && tsc -p companion/tsconfig.json",
+    "check": "npm run compile && npm run check:extension-host && npm run check:local-bridge && npm run check:solution-support && npm run check:debug-support && npm run check:problem-renderer && npm run check:daily-challenge && npm run check:problem-lists && npm run check:difficulty-library && npm run check:tag-library && npm run check:company-library",
     "check:extension-host": "node scripts/check-extension-host.cjs",
+    "check:local-bridge": "node scripts/check-local-bridge.cjs",
     "check:solution-support": "node scripts/check-solution-support.cjs",
     "check:debug-support": "node scripts/check-debug-support.cjs",
     "check:problem-renderer": "node scripts/check-problem-renderer.cjs",
@@ -294,7 +298,8 @@
     "check:difficulty-library": "node scripts/check-difficulty-library.cjs",
     "check:tag-library": "node scripts/check-tag-library.cjs",
     "check:company-library": "node scripts/check-company-library.cjs",
-    "watch": "tsc --watch -p ."
+    "watch": "tsc --watch -p .",
+    "package:companion": "node scripts/package-companion.cjs"
   },
   "release": {
     "branches": [
@@ -304,6 +309,7 @@
     "plugins": [
       "@semantic-release/commit-analyzer",
       "@semantic-release/release-notes-generator",
+      "./scripts/semantic-release-companion.cjs",
       [
         "semantic-release-vsce",
         {

@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { withAuthExpiryHandling } from "../auth/authExpiry";
 import { AuthService } from "../auth/authService";
-import { LeetCodeClient } from "../leetcode/client";
+import type { LeetCodeApi } from "../leetcode/api";
 import { toUserMessage } from "../leetcode/errors";
 import type { ProblemDetail } from "../leetcode/types";
 import { ProblemService } from "../problem/problemService";
@@ -29,7 +29,7 @@ export class SolutionExecutionService implements vscode.Disposable {
   private readonly customInputs = new Map<string, string>();
 
   public constructor(
-    private readonly client: LeetCodeClient,
+    private readonly client: LeetCodeApi,
     private readonly auth: AuthService,
     private readonly problems: ProblemService,
     private readonly panels: ExecutionPanelManager,

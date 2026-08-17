@@ -4,6 +4,7 @@ import {
   CredentialStore,
   normalizeLeetCodeCookie,
 } from "../storage/credentialStore";
+import type { LeetCodeApi } from "./api";
 import { LeetCodeError } from "./errors";
 import { isJudgePending, mapJudgeResult } from "./judgeResult";
 import {
@@ -309,7 +310,7 @@ class RequestGate {
   }
 }
 
-export class LeetCodeClient {
+export class LeetCodeClient implements LeetCodeApi {
   private readonly endpoint: string;
   private readonly streakEndpoint: string;
   private readonly problemIndexEndpoint: string;

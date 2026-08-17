@@ -1,4 +1,4 @@
-import { LeetCodeClient } from "../leetcode/client";
+import type { LeetCodeApi } from "../leetcode/api";
 import { LeetCodeError } from "../leetcode/errors";
 import type { DailyChallenge, DailyStreak } from "../leetcode/types";
 import { DailyChallengeCache } from "./dailyChallengeCache";
@@ -32,7 +32,7 @@ export class DailyChallengeService {
   private loadSequence = 0;
 
   public constructor(
-    private readonly client: LeetCodeClient,
+    private readonly client: LeetCodeApi,
     private readonly cache: DailyChallengeCache,
     private readonly now: () => Date = () => new Date(),
   ) {}

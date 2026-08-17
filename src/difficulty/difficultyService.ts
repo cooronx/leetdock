@@ -1,4 +1,4 @@
-import { LeetCodeClient } from "../leetcode/client";
+import type { LeetCodeApi } from "../leetcode/api";
 import { LeetCodeError } from "../leetcode/errors";
 import type {
   Difficulty,
@@ -25,7 +25,7 @@ export class DifficultyService {
   private generation = 0;
   private readonly details = new Map<Difficulty, DifficultyDetailState>();
 
-  public constructor(private readonly client: LeetCodeClient) {}
+  public constructor(private readonly client: LeetCodeApi) {}
 
   public getDetailSnapshot(
     difficulty: Difficulty,

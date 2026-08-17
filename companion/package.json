@@ -1,0 +1,35 @@
+{
+  "name": "leetdock-auth",
+  "displayName": "LeetDock Local Network",
+  "description": "Runs LeetDock authentication and LeetCode network requests on the local machine.",
+  "version": "1.2.2",
+  "publisher": "cooronx",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cooronx/leetdock.git"
+  },
+  "homepage": "https://github.com/cooronx/leetdock#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onUri",
+    "onCommand:leetdock.internal.local.network",
+    "onCommand:leetdock.internal.localAuth.state",
+    "onCommand:leetdock.internal.localAuth.signIn",
+    "onCommand:leetdock.internal.localAuth.signOut"
+  ],
+  "main": "./dist/companion/src/extension.js",
+  "extensionKind": [
+    "ui"
+  ],
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "../node_modules/.bin/tsc -p tsconfig.json"
+  }
+}

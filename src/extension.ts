@@ -1,7 +1,10 @@
 import * as vscode from "vscode";
 import { withAuthExpiryHandling } from "./auth/authExpiry";
+import { LocalAuthBridge } from "./auth/localAuthBridge";
 import { AuthService } from "./auth/authService";
 import { AuthStatusBar } from "./auth/authStatusBar";
+import { RemoteLeetCodeClient } from "./bridge/remoteLeetCodeClient";
+import { REMOTE_AUTH_CHANGED_COMMAND } from "./bridge/protocol";
 import {
   openProblemCommand,
   refreshProblemCommand,
@@ -14,14 +17,12 @@ import { DailyChallengeCache } from "./daily/dailyChallengeCache";
 import { DailyChallengeService } from "./daily/dailyChallengeService";
 import { DifficultyService } from "./difficulty/difficultyService";
 import { LeetDockTreeProvider } from "./explorer/leetDockTreeProvider";
-import { LeetCodeClient } from "./leetcode/client";
 import { toUserMessage } from "./leetcode/errors";
 import type { Difficulty, ProblemDetail } from "./leetcode/types";
 import { ProblemCache } from "./problem/problemCache";
 import { ProblemService } from "./problem/problemService";
 import { ProblemListService } from "./problemList/problemListService";
 import { CacheStorage } from "./storage/cacheStorage";
-import { CredentialStore } from "./storage/credentialStore";
 import { TagService } from "./tag/tagService";
 import { ProblemPanelManager } from "./webview/problemPanel";
 import { ExecutionPanelManager } from "./webview/executionPanel";
@@ -30,10 +31,9 @@ import { LanguageService } from "./workspace/languageService";
 import { SolutionCodeLensProvider } from "./workspace/solutionCodeLensProvider";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const credentials = new CredentialStore(context.secrets);
   const cache = new CacheStorage(context.globalState);
-  const client = new LeetCodeClient(credentials);
-  const auth = new AuthService(context, client, credentials, cache);
+  const client = new RemoteLeetCodeClient();
+  const auth = new AuthService(new LocalAuthBridge(), cache);
   const problemCache = new ProblemCache(cache);
   const problems = new ProblemService(client, problemCache);
   const dailyCache = new DailyChallengeCache(cache);
@@ -421,17 +421,8 @@ export function activate(context: vscode.ExtensionContext): void {
         "该文件已有判题任务正在运行，请等待当前任务完成。",
       ),
     ),
-    vscode.window.registerUriHandler({
-      handleUri: (uri) =>
-        runWithErrorMessage(async () => {
-          const user = await auth.handleUri(uri);
-          if (user !== undefined) {
-            await vscode.window.showInformationMessage(
-              `LeetDock 登录成功：${user.username}`,
-            );
-          }
-        }),
-    }),
+    vscode.commands.registerCommand(REMOTE_AUTH_CHANGED_COMMAND, (user: unknown) =>
+      auth.acceptAuthenticatedUser(user)),
   );
 
   void runWithErrorMessage(() => auth.initialize());
