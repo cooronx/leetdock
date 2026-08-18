@@ -284,9 +284,10 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
-    "check": "npm run compile && npm run check:extension-host && npm run check:http-transport && npm run check:solution-support && npm run check:debug-support && npm run check:problem-renderer && npm run check:daily-challenge && npm run check:problem-lists && npm run check:difficulty-library && npm run check:tag-library && npm run check:company-library",
+    "check": "npm run compile && npm run check:extension-host && npm run check:http-transport && npm run check:paged-question-library && npm run check:solution-support && npm run check:debug-support && npm run check:problem-renderer && npm run check:daily-challenge && npm run check:problem-lists && npm run check:difficulty-library && npm run check:tag-library && npm run check:company-library",
     "check:extension-host": "node scripts/check-extension-host.cjs",
     "check:http-transport": "node scripts/check-http-transport.cjs",
+    "check:paged-question-library": "node scripts/check-paged-question-library.cjs",
     "check:solution-support": "node scripts/check-solution-support.cjs",
     "check:debug-support": "node scripts/check-debug-support.cjs",
     "check:problem-renderer": "node scripts/check-problem-renderer.cjs",

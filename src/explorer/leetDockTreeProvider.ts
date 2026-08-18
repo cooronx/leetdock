@@ -24,6 +24,10 @@ import type {
   ProblemTag,
 } from "../leetcode/types";
 import type {
+  LoadState,
+  PagedDetailLoadState,
+} from "../library/pagedQuestionLibrary";
+import type {
   ProblemListDetailState,
   ProblemListService,
 } from "../problemList/problemListService";
@@ -37,40 +41,6 @@ type DailyViewState =
   | { readonly kind: "idle" }
   | { readonly kind: "loading" }
   | { readonly kind: "ready"; readonly state: DailyChallengeState }
-  | { readonly kind: "error"; readonly error: unknown };
-
-type ProblemListsViewState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly lists: readonly ProblemListSummary[] }
-  | { readonly kind: "error"; readonly error: unknown };
-
-type ProblemListDetailViewState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly error: unknown };
-
-type CompaniesViewState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly companies: readonly CompanySummary[] }
-  | { readonly kind: "error"; readonly error: unknown };
-
-type CompanyDetailViewState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly error: unknown };
-
-type TagsViewState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly tags: readonly ProblemTag[] }
-  | { readonly kind: "error"; readonly error: unknown };
-
-type TagDetailViewState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly error: unknown };
-
-type DifficultyDetailViewState =
-  | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly error: unknown };
 
 export type LeetDockNode =
@@ -170,24 +140,6 @@ export class LeetDockTreeProvider
   private readonly authSubscription: vscode.Disposable;
   private dailyView: DailyViewState = { kind: "idle" };
   private dailyLoadSequence = 0;
-  private problemListsView: ProblemListsViewState = { kind: "idle" };
-  private problemListsLoadSequence = 0;
-  private readonly problemListDetailViews = new Map<string, ProblemListDetailViewState>();
-  private readonly loadingMoreProblemLists = new Set<string>();
-  private companiesView: CompaniesViewState = { kind: "idle" };
-  private companiesLoadSequence = 0;
-  private readonly companyDetailViews = new Map<string, CompanyDetailViewState>();
-  private readonly loadingMoreCompanies = new Set<string>();
-  private tagsView: TagsViewState = { kind: "idle" };
-  private tagsLoadSequence = 0;
-  private readonly tagDetailViews = new Map<string, TagDetailViewState>();
-  private readonly loadingMoreTags = new Set<string>();
-  private difficultyGeneration = 0;
-  private readonly difficultyDetailViews = new Map<
-    Difficulty,
-    DifficultyDetailViewState
-  >();
-  private readonly loadingMoreDifficulties = new Set<Difficulty>();
   private disposed = false;
 
   public constructor(
@@ -268,80 +220,35 @@ export class LeetDockTreeProvider
     }
     if (force) {
       this.problemLists.reset();
-      this.problemListDetailViews.clear();
-      this.loadingMoreProblemLists.clear();
     }
-    const sequence = this.problemListsLoadSequence + 1;
-    this.problemListsLoadSequence = sequence;
-    this.problemListsView = { kind: "loading" };
-    this.refresh();
-    try {
-      const lists = await this.problemLists.loadCatalog();
-      if (sequence === this.problemListsLoadSequence) {
-        this.problemListsView = { kind: "ready", lists };
-        this.refresh();
-      }
-      return lists;
-    } catch (error) {
-      if (sequence === this.problemListsLoadSequence) {
-        this.problemListsView = { kind: "error", error };
-        this.refresh();
-      }
-      throw error;
-    }
+    return this.observeLibraryRequest(this.problemLists.loadCatalog());
   }
 
   public async refreshMyProblemList(slug: string): Promise<void> {
-    const summary = this.problemListsView.kind === "ready"
-      ? this.problemListsView.lists.find((list) => list.slug === slug)
-      : undefined;
+    const summary = this.problemLists.catalogSnapshot?.find(
+      (list) => list.slug === slug,
+    );
     if (summary === undefined || !hasOnlineSignedInUser(this.auth.snapshot)) {
       return;
     }
-    this.problemListDetailViews.set(slug, { kind: "loading" });
-    this.refresh();
-    try {
-      await this.problemLists.loadDetail(summary);
-      this.problemListDetailViews.delete(slug);
-      this.refresh();
-    } catch (error) {
-      this.problemListDetailViews.set(slug, { kind: "error", error });
-      this.refresh();
-      throw error;
-    }
+    await this.observeLibraryRequest(this.problemLists.loadDetail(summary));
   }
 
   public async loadMoreMyProblemList(slug: string): Promise<void> {
-    if (this.loadingMoreProblemLists.has(slug)) {
-      return;
-    }
-    this.loadingMoreProblemLists.add(slug);
-    this.refresh();
-    try {
-      await this.problemLists.loadMore(slug);
-    } finally {
-      this.loadingMoreProblemLists.delete(slug);
-      this.refresh();
-    }
+    await this.observeLibraryRequest(this.problemLists.loadMore(slug));
   }
 
   public async refreshLoadedProblemListsAfterAccepted(titleSlug: string): Promise<void> {
     if (!hasOnlineSignedInUser(this.auth.snapshot)) {
       return;
     }
-    try {
-      await this.problemLists.refreshLoadedAfterAccepted(titleSlug);
-    } finally {
-      this.refresh();
-    }
+    await this.observeLibraryRequest(
+      this.problemLists.refreshLoadedAfterAccepted(titleSlug),
+    );
   }
 
   public resetMyProblemLists(refresh = true): void {
-    this.problemListsLoadSequence += 1;
     this.problemLists.reset();
-    this.problemListsView = { kind: "idle" };
-    this.problemListDetailViews.clear();
-    this.loadingMoreProblemLists.clear();
     if (refresh) {
       this.refresh();
     }
@@ -356,27 +263,8 @@ export class LeetDockTreeProvider
     }
     if (force) {
       this.companies.reset();
-      this.companyDetailViews.clear();
-      this.loadingMoreCompanies.clear();
     }
-    const sequence = this.companiesLoadSequence + 1;
-    this.companiesLoadSequence = sequence;
-    this.companiesView = { kind: "loading" };
-    this.refresh();
-    try {
-      const companies = await this.companies.loadCatalog();
-      if (sequence === this.companiesLoadSequence) {
-        this.companiesView = { kind: "ready", companies };
-        this.refresh();
-      }
-      return companies;
-    } catch (error) {
-      if (sequence === this.companiesLoadSequence) {
-        this.companiesView = { kind: "error", error };
-        this.refresh();
-      }
-      throw error;
-    }
+    return this.observeLibraryRequest(this.companies.loadCatalog());
   }
 
   public async refreshCompany(slug: string): Promise<void> {
@@ -384,31 +272,11 @@ export class LeetDockTreeProvider
     if (summary === undefined || !hasOnlinePremiumUser(this.auth.snapshot)) {
       return;
     }
-    this.companyDetailViews.set(slug, { kind: "loading" });
-    this.refresh();
-    try {
-      await this.companies.loadDetail(summary);
-      this.companyDetailViews.delete(slug);
-      this.refresh();
-    } catch (error) {
-      this.companyDetailViews.set(slug, { kind: "error", error });
-      this.refresh();
-      throw error;
-    }
+    await this.observeLibraryRequest(this.companies.loadDetail(summary));
   }
 
   public async loadMoreCompany(slug: string): Promise<void> {
-    if (this.loadingMoreCompanies.has(slug)) {
-      return;
-    }
-    this.loadingMoreCompanies.add(slug);
-    this.refresh();
-    try {
-      await this.companies.loadMore(slug);
-    } finally {
-      this.loadingMoreCompanies.delete(slug);
-      this.refresh();
-    }
+    await this.observeLibraryRequest(this.companies.loadMore(slug));
   }
 
   public markCompanyProblemAccepted(titleSlug: string): void {
@@ -418,11 +286,7 @@ export class LeetDockTreeProvider
   }
 
   public resetCompanies(refresh = true): void {
-    this.companiesLoadSequence += 1;
     this.companies.reset();
-    this.companiesView = { kind: "idle" };
-    this.companyDetailViews.clear();
-    this.loadingMoreCompanies.clear();
     if (refresh) {
       this.refresh();
     }
@@ -433,27 +297,8 @@ export class LeetDockTreeProvider
   ): Promise<readonly ProblemTag[] | undefined> {
     if (force) {
       this.tags.reset();
-      this.tagDetailViews.clear();
-      this.loadingMoreTags.clear();
     }
-    const sequence = this.tagsLoadSequence + 1;
-    this.tagsLoadSequence = sequence;
-    this.tagsView = { kind: "loading" };
-    this.refresh();
-    try {
-      const tags = await this.tags.loadCatalog();
-      if (sequence === this.tagsLoadSequence) {
-        this.tagsView = { kind: "ready", tags };
-        this.refresh();
-      }
-      return tags;
-    } catch (error) {
-      if (sequence === this.tagsLoadSequence) {
-        this.tagsView = { kind: "error", error };
-        this.refresh();
-      }
-      throw error;
-    }
+    return this.observeLibraryRequest(this.tags.loadCatalog());
   }
 
   public async refreshTag(slug: string): Promise<void> {
@@ -461,31 +306,11 @@ export class LeetDockTreeProvider
     if (summary === undefined) {
       return;
     }
-    this.tagDetailViews.set(slug, { kind: "loading" });
-    this.refresh();
-    try {
-      await this.tags.loadDetail(summary);
-      this.tagDetailViews.delete(slug);
-      this.refresh();
-    } catch (error) {
-      this.tagDetailViews.set(slug, { kind: "error", error });
-      this.refresh();
-      throw error;
-    }
+    await this.observeLibraryRequest(this.tags.loadDetail(summary));
   }
 
   public async loadMoreTag(slug: string): Promise<void> {
-    if (this.loadingMoreTags.has(slug)) {
-      return;
-    }
-    this.loadingMoreTags.add(slug);
-    this.refresh();
-    try {
-      await this.tags.loadMore(slug);
-    } finally {
-      this.loadingMoreTags.delete(slug);
-      this.refresh();
-    }
+    await this.observeLibraryRequest(this.tags.loadMore(slug));
   }
 
   public markTagProblemAccepted(titleSlug: string): void {
@@ -495,47 +320,18 @@ export class LeetDockTreeProvider
   }
 
   public resetTags(refresh = true): void {
-    this.tagsLoadSequence += 1;
     this.tags.reset();
-    this.tagsView = { kind: "idle" };
-    this.tagDetailViews.clear();
-    this.loadingMoreTags.clear();
     if (refresh) {
       this.refresh();
     }
   }
 
   public async refreshDifficulty(difficulty: Difficulty): Promise<void> {
-    const generation = this.difficultyGeneration;
-    this.difficultyDetailViews.set(difficulty, { kind: "loading" });
-    this.refresh();
-    try {
-      await this.difficulties.loadDetail(difficulty);
-      if (generation === this.difficultyGeneration) {
-        this.difficultyDetailViews.delete(difficulty);
-        this.refresh();
-      }
-    } catch (error) {
-      if (generation === this.difficultyGeneration) {
-        this.difficultyDetailViews.set(difficulty, { kind: "error", error });
-        this.refresh();
-      }
-      throw error;
-    }
+    await this.observeLibraryRequest(this.difficulties.loadDetail(difficulty));
   }
 
   public async loadMoreDifficulty(difficulty: Difficulty): Promise<void> {
-    if (this.loadingMoreDifficulties.has(difficulty)) {
-      return;
-    }
-    this.loadingMoreDifficulties.add(difficulty);
-    this.refresh();
-    try {
-      await this.difficulties.loadMore(difficulty);
-    } finally {
-      this.loadingMoreDifficulties.delete(difficulty);
-      this.refresh();
-    }
+    await this.observeLibraryRequest(this.difficulties.loadMore(difficulty));
   }
 
   public markDifficultyProblemAccepted(titleSlug: string): void {
@@ -545,19 +341,14 @@ export class LeetDockTreeProvider
   }
 
   public resetDifficulties(refresh = true): void {
-    this.difficultyGeneration += 1;
     this.difficulties.reset();
-    this.difficultyDetailViews.clear();
-    this.loadingMoreDifficulties.clear();
     if (refresh) {
       this.refresh();
     }
   }
 
   public async pickTag(): Promise<LeetDockNode | undefined> {
-    const tags = this.tagsView.kind === "ready"
-      ? this.tagsView.tags
-      : await this.refreshTags(false);
+    const tags = this.tags.catalogSnapshot ?? await this.refreshTags(false);
     if (tags === undefined) {
       return undefined;
     }
@@ -580,9 +371,8 @@ export class LeetDockTreeProvider
   }
 
   public async pickCompany(): Promise<LeetDockNode | undefined> {
-    const companies = this.companiesView.kind === "ready"
-      ? this.companiesView.companies
-      : await this.refreshCompanies(false);
+    const companies = this.companies.catalogSnapshot ??
+      await this.refreshCompanies(false);
     if (companies === undefined) {
       return undefined;
     }
@@ -617,7 +407,10 @@ export class LeetDockTreeProvider
       case "daily-status":
         return dailyStatusItem(element.status);
       case "my-lists":
-        return myProblemListsGroupItem(this.problemListsView, this.auth.snapshot);
+        return myProblemListsGroupItem(
+          this.problemLists.catalogState,
+          this.auth.snapshot,
+        );
       case "my-lists-status":
         return myProblemListsStatusItem(element.status);
       case "problem-list":
@@ -629,7 +422,7 @@ export class LeetDockTreeProvider
       case "problem-list-more":
         return problemListMoreItem(
           element.summary,
-          this.loadingMoreProblemLists.has(element.summary.slug),
+          isLoadingMore(this.problemLists.getDetailState(element.summary.slug)),
         );
       case "library":
         return libraryItem();
@@ -644,10 +437,10 @@ export class LeetDockTreeProvider
       case "difficulty-more":
         return difficultyMoreItem(
           element.difficulty,
-          this.loadingMoreDifficulties.has(element.difficulty),
+          isLoadingMore(this.difficulties.getDetailState(element.difficulty)),
         );
       case "tags":
-        return tagsItem(this.tagsView);
+        return tagsItem(this.tags.catalogState);
       case "tag-search":
         return tagSearchItem();
       case "tags-status":
@@ -661,10 +454,10 @@ export class LeetDockTreeProvider
       case "tag-more":
         return tagMoreItem(
           element.summary,
-          this.loadingMoreTags.has(element.summary.slug),
+          isLoadingMore(this.tags.getDetailState(element.summary.slug)),
         );
       case "companies":
-        return companiesItem(this.companiesView, this.auth.snapshot);
+        return companiesItem(this.companies.catalogState, this.auth.snapshot);
       case "company-search":
         return companySearchItem();
       case "companies-status":
@@ -678,7 +471,7 @@ export class LeetDockTreeProvider
       case "company-more":
         return companyMoreItem(
           element.summary,
-          this.loadingMoreCompanies.has(element.summary.slug),
+          isLoadingMore(this.companies.getDetailState(element.summary.slug)),
         );
       case "search": {
         const item = new vscode.TreeItem("搜索题目", vscode.TreeItemCollapsibleState.None);
@@ -801,20 +594,21 @@ export class LeetDockTreeProvider
     if (snapshot.status === "offline") {
       return [{ kind: "my-lists-status", status: "error" }];
     }
-    if (this.problemListsView.kind === "idle") {
+    const view = this.problemLists.catalogState;
+    if (view.kind === "idle") {
       void this.refreshMyProblemLists(false).catch(() => undefined);
       return [{ kind: "my-lists-status", status: "loading" }];
     }
-    switch (this.problemListsView.kind) {
+    switch (view.kind) {
       case "loading":
         return [{ kind: "my-lists-status", status: "loading" }];
       case "error":
         return [{ kind: "my-lists-status", status: "error" }];
       case "ready":
-        if (this.problemListsView.lists.length === 0) {
+        if (view.value.length === 0) {
           return [{ kind: "my-lists-status", status: "empty" }];
         }
-        return this.problemListsView.lists.map((summary) => ({
+        return view.value.map((summary) => ({
           kind: "problem-list" as const,
           summary,
           detail: this.problemLists.getDetailSnapshot(summary.slug),
@@ -823,17 +617,17 @@ export class LeetDockTreeProvider
   }
 
   private difficultyChildren(difficulty: Difficulty): LeetDockNode[] {
-    const view = this.difficultyDetailViews.get(difficulty);
-    const detail = this.difficulties.getDetailSnapshot(difficulty);
-    if (view?.kind === "error") {
+    const view = this.difficulties.getDetailState(difficulty);
+    if (view.kind === "error") {
       return [{ kind: "difficulty-status", difficulty, status: "error" }];
     }
-    if (detail === undefined) {
-      if (view?.kind !== "loading") {
+    if (view.kind !== "ready") {
+      if (view.kind === "idle") {
         void this.refreshDifficulty(difficulty).catch(() => undefined);
       }
       return [{ kind: "difficulty-status", difficulty, status: "loading" }];
     }
+    const detail = view.value;
     const children: LeetDockNode[] = detail.questions.map((problem) => ({
       kind: "difficulty-problem" as const,
       difficulty,
@@ -852,17 +646,17 @@ export class LeetDockTreeProvider
     if (!hasOnlineSignedInUser(this.auth.snapshot)) {
       return [];
     }
-    const view = this.problemListDetailViews.get(summary.slug);
-    const detail = this.problemLists.getDetailSnapshot(summary.slug);
-    if (view?.kind === "error") {
+    const view = this.problemLists.getDetailState(summary.slug);
+    if (view.kind === "error") {
       return [{ kind: "problem-list-status", summary, status: "error" }];
     }
-    if (detail === undefined) {
-      if (view?.kind !== "loading") {
+    if (view.kind !== "ready") {
+      if (view.kind === "idle") {
         void this.refreshMyProblemList(summary.slug).catch(() => undefined);
       }
       return [{ kind: "problem-list-status", summary, status: "loading" }];
     }
+    const detail = view.value;
     const children: LeetDockNode[] = detail.questions.map((problem) => ({
       kind: "problem-list-problem" as const,
       listSlug: summary.slug,
@@ -891,22 +685,23 @@ export class LeetDockTreeProvider
     if (snapshot.user?.isPremium !== true) {
       return [{ kind: "companies-status", status: "premium" }];
     }
-    if (this.companiesView.kind === "idle") {
+    const view = this.companies.catalogState;
+    if (view.kind === "idle") {
       void this.refreshCompanies(false).catch(() => undefined);
       return [{ kind: "companies-status", status: "loading" }];
     }
-    switch (this.companiesView.kind) {
+    switch (view.kind) {
       case "loading":
         return [{ kind: "companies-status", status: "loading" }];
       case "error":
         return [{ kind: "companies-status", status: "error" }];
       case "ready":
-        if (this.companiesView.companies.length === 0) {
+        if (view.value.length === 0) {
           return [{ kind: "companies-status", status: "empty" }];
         }
         return [
           { kind: "company-search" },
-          ...this.companiesView.companies.map((summary) => ({
+          ...view.value.map((summary) => ({
             kind: "company" as const,
             summary,
             detail: this.companies.getDetailSnapshot(summary.slug),
@@ -916,22 +711,23 @@ export class LeetDockTreeProvider
   }
 
   private tagsChildren(): LeetDockNode[] {
-    if (this.tagsView.kind === "idle") {
+    const view = this.tags.catalogState;
+    if (view.kind === "idle") {
       void this.refreshTags(false).catch(() => undefined);
       return [{ kind: "tags-status", status: "loading" }];
     }
-    switch (this.tagsView.kind) {
+    switch (view.kind) {
       case "loading":
         return [{ kind: "tags-status", status: "loading" }];
       case "error":
         return [{ kind: "tags-status", status: "error" }];
       case "ready":
-        if (this.tagsView.tags.length === 0) {
+        if (view.value.length === 0) {
           return [{ kind: "tags-status", status: "empty" }];
         }
         return [
           { kind: "tag-search" },
-          ...this.tagsView.tags.map((summary) => ({
+          ...view.value.map((summary) => ({
             kind: "tag" as const,
             summary,
             detail: this.tags.getDetailSnapshot(summary.slug),
@@ -941,17 +737,17 @@ export class LeetDockTreeProvider
   }
 
   private tagChildren(summary: ProblemTag): LeetDockNode[] {
-    const view = this.tagDetailViews.get(summary.slug);
-    const detail = this.tags.getDetailSnapshot(summary.slug);
-    if (view?.kind === "error") {
+    const view = this.tags.getDetailState(summary.slug);
+    if (view.kind === "error") {
       return [{ kind: "tag-status", summary, status: "error" }];
     }
-    if (detail === undefined) {
-      if (view?.kind !== "loading") {
+    if (view.kind !== "ready") {
+      if (view.kind === "idle") {
         void this.refreshTag(summary.slug).catch(() => undefined);
       }
       return [{ kind: "tag-status", summary, status: "loading" }];
     }
+    const detail = view.value;
     const children: LeetDockNode[] = detail.questions.map((problem) => ({
       kind: "tag-problem" as const,
       tagSlug: summary.slug,
@@ -970,17 +766,17 @@ export class LeetDockTreeProvider
     if (!hasOnlinePremiumUser(this.auth.snapshot)) {
       return [];
     }
-    const view = this.companyDetailViews.get(summary.slug);
-    const detail = this.companies.getDetailSnapshot(summary.slug);
-    if (view?.kind === "error") {
+    const view = this.companies.getDetailState(summary.slug);
+    if (view.kind === "error") {
       return [{ kind: "company-status", summary, status: "error" }];
     }
-    if (detail === undefined) {
-      if (view?.kind !== "loading") {
+    if (view.kind !== "ready") {
+      if (view.kind === "idle") {
         void this.refreshCompany(summary.slug).catch(() => undefined);
       }
       return [{ kind: "company-status", summary, status: "loading" }];
     }
+    const detail = view.value;
     const children: LeetDockNode[] = detail.questions.map((problem) => ({
       kind: "company-problem" as const,
       companySlug: summary.slug,
@@ -996,15 +792,16 @@ export class LeetDockTreeProvider
   }
 
   private companySummary(slug: string): CompanySummary | undefined {
-    return this.companiesView.kind === "ready"
-      ? this.companiesView.companies.find((company) => company.slug === slug)
-      : undefined;
+    return this.companies.catalogSnapshot?.find((company) => company.slug === slug);
   }
 
   private tagSummary(slug: string): ProblemTag | undefined {
-    return this.tagsView.kind === "ready"
-      ? this.tagsView.tags.find((tag) => tag.slug === slug)
-      : undefined;
+    return this.tags.catalogSnapshot?.find((tag) => tag.slug === slug);
+  }
+
+  private observeLibraryRequest<T>(request: Promise<T>): Promise<T> {
+    this.refresh();
+    return request.finally(() => this.refresh());
   }
 }
 
@@ -1161,7 +958,7 @@ function dailyStatusItem(status: "error" | "loading" | "streak"): vscode.TreeIte
 }
 
 function myProblemListsGroupItem(
-  view: ProblemListsViewState,
+  view: LoadState<readonly ProblemListSummary[]>,
   auth: AuthSnapshot,
 ): vscode.TreeItem {
   const item = new vscode.TreeItem(
@@ -1182,8 +979,8 @@ function myProblemListsGroupItem(
   } else if (view.kind === "loading") {
     item.description = "正在加载";
   } else if (view.kind === "ready") {
-    item.description = `${view.lists.length} 个`;
-    item.tooltip = `力扣普通题单 · ${view.lists.length} 个`;
+    item.description = `${view.value.length} 个`;
+    item.tooltip = `力扣普通题单 · ${view.value.length} 个`;
   }
   return item;
 }
@@ -1435,7 +1232,7 @@ function difficultyMoreItem(
   return item;
 }
 
-function tagsItem(view: TagsViewState): vscode.TreeItem {
+function tagsItem(view: LoadState<readonly ProblemTag[]>): vscode.TreeItem {
   const item = new vscode.TreeItem("标签/tag", vscode.TreeItemCollapsibleState.Collapsed);
   item.id = "leetdock.tags";
   item.iconPath = new vscode.ThemeIcon("tag");
@@ -1446,8 +1243,8 @@ function tagsItem(view: TagsViewState): vscode.TreeItem {
     item.description = "加载失败";
     item.tooltip = "无法获取标签题库；展开后点击重试";
   } else if (view.kind === "ready") {
-    item.description = `${view.tags.length} 个`;
-    item.tooltip = `官方标签题库 · ${view.tags.length} 个标签`;
+    item.description = `${view.value.length} 个`;
+    item.tooltip = `官方标签题库 · ${view.value.length} 个标签`;
   }
   return item;
 }
@@ -1574,7 +1371,7 @@ function tagMoreItem(
 }
 
 function companiesItem(
-  view: CompaniesViewState,
+  view: LoadState<readonly CompanySummary[]>,
   auth: AuthSnapshot,
 ): vscode.TreeItem {
   const item = new vscode.TreeItem("公司", vscode.TreeItemCollapsibleState.Collapsed);
@@ -1594,8 +1391,8 @@ function companiesItem(
   } else if (view.kind === "loading") {
     item.description = "正在加载";
   } else if (view.kind === "ready") {
-    item.description = `${view.companies.length} 个`;
-    item.tooltip = `官方公司题库 · ${view.companies.length} 个公司`;
+    item.description = `${view.value.length} 个`;
+    item.tooltip = `官方公司题库 · ${view.value.length} 个公司`;
   }
   return item;
 }
@@ -1742,6 +1539,10 @@ function companyMoreItem(
   }
   item.contextValue = "leetdock.company.more";
   return item;
+}
+
+function isLoadingMore<T>(state: PagedDetailLoadState<T>): boolean {
+  return state.kind === "ready" && state.loadingMore;
 }
 
 function formatFrequency(frequency: number): string {
